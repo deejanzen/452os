@@ -129,6 +129,19 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // test if in kernel mode; halt if in user mode
 
     // Return if stack size is too small
+    int cur_mode = USLOSS_PsrGet();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): psr is %d\n", mode);
+
+    if ((mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("fork1(): current mode not kernel\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(0);
+    }
+    // Return if stack size is too small
+    if (stacksize < USLOSS_MIN_STACK) {
+        return -2;
+    }
 
     // Is there room in the process table? What is the next PID?
 
