@@ -133,7 +133,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): psr is %d\n", mode);
 
-    if ((mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
         USLOSS_Console("fork1(): current mode not kernel\n");
         USLOSS_Console("halting...\n");
         USLOSS_Halt(0);
