@@ -56,6 +56,9 @@ void startup(int argc, char *argv[])
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
+    for (int i = 0; i < MAXPROC; i++) {
+        memset(&ProcTable[i], 0, sizeof(procStruct));
+    }
 
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
@@ -129,7 +132,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // test if in kernel mode; halt if in user mode
     int cur_mode = USLOSS_PsrGet();
     if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): psr is %d\n", mode);
+        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
 
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
         USLOSS_Console("fork1(): current mode not kernel\n");
