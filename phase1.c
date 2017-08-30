@@ -56,6 +56,7 @@ void startup(int argc, char *argv[])
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
+    // TODO initialize ProcTable to values other than 0
     for (int i = 0; i < MAXPROC; i++) {
         memset(&ProcTable[i], 0, sizeof(procStruct));
     }
@@ -63,7 +64,7 @@ void startup(int argc, char *argv[])
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
-    ReadyList = NULL;
+    ReadyList = NULL; // TODO initialize ready list to priority queue
 
     // Initialize the clock interrupt handler
 
