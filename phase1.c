@@ -159,6 +159,11 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
 
     // Is there room in the process table? What is the next PID?
+    for (int i = 0; i < MAXPROC; i++) {
+        if (ProcTable[i].pid == 0) {
+            procSlot = i;
+        }
+    }
 
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
@@ -190,7 +195,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     // More stuff to do here...
 
-    return -1;  // -1 is not correct! Here to prevent warning.
+    return procSlot;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
