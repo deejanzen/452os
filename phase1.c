@@ -58,13 +58,26 @@ void startup(int argc, char *argv[])
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
     // TODO initialize ProcTable to values other than 0
     for (int i = 0; i < MAXPROC; i++) {
-        memset(&ProcTable[i], 0, sizeof(procStruct));
+        ProcTable[i].nextProcPtr = NULL;
+        ProcTable[i].childProcPtr = NULL;
+        ProcTable[i].nextSiblingPtr = NULL;
+        ProcTable[i].name[0] = '\0';     /* process's name */
+        ProcTable[i].startArg[0] = '\0';  /* args passed to process */
+        ProcTable[i].state.start = NULL;             /* current context for process */
+//        ProcTable[i].state.context = 0;             /* current context for process */
+        ProcTable[i].state.pageTable = NULL;             /* current context for process */
+        ProcTable[i].pid = 0;               /* process id */
+        ProcTable[i].priority = 0;
+        ProcTable[i].startFunc = NULL;   /* function where process begins -- launch */
+        ProcTable[i].stack = NULL;
+        ProcTable[i].stackSize = 0;
+        ProcTable[i].status = 0;        /* READY, BLOCKED, QUIT, etc. */
     }
 
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
-    ReadyList = NULL; // TODO initialize ready list to priority queue
+    ReadyList = NULL;
 
     // Initialize the clock interrupt handler
 
