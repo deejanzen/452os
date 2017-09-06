@@ -180,21 +180,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
 
     // Is there room in the process table? What is the next PID?
-	int counter = 0;
-	while(1){
-		if (procTable[nextPid % 50].pid != -1){
-			procSlot = nextPid % 50;
-			procTable[procSlot].pid = nextPid;
-			break;
-		} else {
-			nextPid++;
-		}
-		//no empty slots in the process table
-		if (counter++ > 48){
-			USLOSS_Console("fork1(): No empty slots in the process table.\n");
-			return -1;
-		}
-	}
     
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
