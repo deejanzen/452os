@@ -22,6 +22,8 @@ void launch();
 static void checkDeadlock();
 
 
+
+
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
@@ -40,6 +42,9 @@ procPtr Current;
 unsigned int nextPid = SENTINELPID;
 
 
+
+
+
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
    Name - startup
@@ -56,23 +61,27 @@ void startup(int argc, char *argv[])
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
-    for (int i = 0; i < MAXPROC; i++) {
-        ProcTable[i].nextProcPtr = NULL;
-        ProcTable[i].childProcPtr = NULL;
-        ProcTable[i].nextSiblingPtr = NULL;
-        ProcTable[i].name[0] = '\0';     /* process's name */
-        ProcTable[i].startArg[0] = '\0';  /* args passed to process */
-        ProcTable[i].state.start = NULL;             /* current context for process */
-//        ProcTable[i].state.context = 0;             /* current context for process */
-        ProcTable[i].state.pageTable = NULL;             /* current context for process */
-        ProcTable[i].pid = 0;               /* process id */
-        ProcTable[i].priority = 0;
-        ProcTable[i].startFunc = NULL;   /* function where process begins -- launch */
-        ProcTable[i].stack = NULL;
-        ProcTable[i].stackSize = 0;
-        ProcTable[i].status = 0;        /* READY, BLOCKED, QUIT, etc. */
-    }
-
+	
+	for (int i = 0; i < MAXPROC; i++){
+		procTable[i].nextProcPtr = NULL; 			/*procPtr*/
+        procTable[i].childProcPtr = NULL;			/*procPtr*/
+        procTable[i].nextSiblingPtr = NULL; 		/*procPtr*/
+        procTable[i].name = NULL;     				/* char *: process's name */
+        procTable[i].startArg = NULL;  				/* char: args passed to process */
+     	procTable[i].state = NULL;          		/* USLOSS_Context: current context for process */
+        procTable[i].pid = -1;              		/* short: process id */
+        procTable[i].priority = -1;  				/* int */
+   		procTable[i].startFunc = NULL;   			/* int (* startFunc) (char *): function where process begins -- launch */
+   		procTable[i].stack = NULL; 					/* Char* */
+   		procTable[i].stackSize = 0;					/* unsigned int    */
+        procTable[i].status = -1;        			/* int: READY, BLOCKED, QUIT, etc. */
+   		/* other fields as needed... */
+   		procTable[i].quitStatus = 0;				/*process quit(quitStatus); */
+   		procTable[i].parent = NULL;					/*a process' parent ptr */
+   		procTable[i].unjoinedQuitChildren = NULL; 	/*procPtr of quit children pre-join 
+   		
+	}
+    
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
@@ -137,15 +146,26 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-    int procSlot = -1;
+	if(name == NULL || startFunc == NULL ){
+		USLOSS_Console("fork1(): name is NULL\n");
+		return -1; 
+	} 
+	if(startFunc == NULL){
+		USLOSS_Console("fork1(): startFunc is NULL\n");
+		return -1; 
+	}
+	if (priority < 1 || priority > 6){
+		USLOSS_Console("fork1(): priority %d is out-of-range\n", priority);
+		return -1;
+	}
+	
+	int procSlot = -1;
 
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): creating process %s\n", name);
 
     // test if in kernel mode; halt if in user mode
-
-    // Return if stack size is too small
-    int cur_mode = USLOSS_PsrGet();
+	int cur_mode = USLOSS_PsrGet();
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): psr is %d\n", cur_mode);
 
@@ -156,24 +176,11 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK) {
-        if (DEBUG && debugflag)
-            USLOSS_Console("fork1(): stack size too small");
         return -2;
     }
 
     // Is there room in the process table? What is the next PID?
-    int i;
-    for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[i % MAXPROC].pid == 0) {
-            procSlot = i;
-            break;
-        }
-    }
-    // If ProcTable is full return -1
-    if (i == MAXPROC + 1) {
-        return -1;
-    }
-
+    
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
@@ -190,16 +197,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     else
         strcpy(ProcTable[procSlot].startArg, arg);
 
-    ProcTable[procSlot].stackSize = stacksize;
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): malloc stackSize\n");
-    ProcTable[procSlot].stack = malloc(ProcTable[procSlot].stackSize);
-
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
 
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): calling USLOSS_ContextInit\n");
     USLOSS_ContextInit(&(ProcTable[procSlot].state),
                        ProcTable[procSlot].stack,
                        ProcTable[procSlot].stackSize,
@@ -210,9 +210,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
-    // TODO call dispatcher once it is ready
-    
-    return procSlot;  // -1 is not correct! Here to prevent warning.
+
+    return procSlot;
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -257,6 +256,46 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
+	// test if in kernel mode; halt if in user mode
+	int cur_mode = USLOSS_PsrGet();
+    if (DEBUG && debugflag)
+        USLOSS_Console("join(): psr is %d\n", cur_mode);
+
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("join(): current mode not kernel\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(0);
+    }
+    
+    
+    //join() function: There are three cases
+    
+    //(1)The process has no children. (What happens?)
+    if (Current->childProcPtr == NULL){
+    	USLOSS_Console("Process %d has no children\n", Current->pid);
+    	return -2;
+    }
+    
+    //(2)Child(ren) quit() before the join() occurred
+    //	(a)Return the pid and quit status of one quit child 
+    //	   and finish the clean up of that child’s process table entry.
+    //	(b)Report on quit children in the order the children quit().
+    //if (Current->unjoinedQuitChildren != NULL){
+    	//*status = Current->unjoinedQuitChildren->quitStatus;
+    	//int unjoinedPid = Current->unjoinedQuitChildren->pid;
+    	//cleanup ProcStruct;
+    	//
+    	//return unjoinedPid;
+    //}
+    
+    //(3)No (unjoined) child has quit() ... must wait.
+    //	(a)how? After wait is over: return the pid and 
+    //			quit status of the child that quit.
+    //	(b)Where does the parent find these?
+    
+    //blockMe(JOINING) //#define JOINING 2 /*or something */
+    
+    //the process was zapped while waiting for a child to quit RETURN -1
     return -1;  // -1 is not correct! Here to prevent warning.
 } /* join */
 
@@ -271,7 +310,34 @@ int join(int *status)
    Side Effects - changes the parent of pid child completion status list.
    ------------------------------------------------------------------------ */
 void quit(int status)
-{
+{	
+	// test if in kernel mode; halt if in user mode
+	int cur_mode = USLOSS_PsrGet();
+    if (DEBUG && debugflag)
+        USLOSS_Console("quit(): psr is %d\n", cur_mode);
+
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("quit(): current mode not kernel\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(0);
+    }
+    
+	//Error if a process with active children calls quit(). Halt USLOSS with 
+	//appropriate error message.
+	if (Current->childProcPtr != NULL){
+    	USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
+    	USLOSS_Halt(1);
+    }
+    
+    //Cleanup the process table entry (but not entirely, see join()
+    //	(1)Parent has already done a join(), OR
+    //	(2)Parent has not (yet) done a join()
+    
+    //Unblock processes that zap’d this process
+    
+    
+    //May have children who have quit(), but for whom a join() was not 
+    //(and now will not) be done (This isnt error)
     p1_quit(Current->pid);
 } /* quit */
 
@@ -289,7 +355,6 @@ void quit(int status)
 void dispatcher(void)
 {
     procPtr nextProcess = NULL;
-    // TODO nextProcess should point to next process in ReadyList
 
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */

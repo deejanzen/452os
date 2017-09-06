@@ -5,6 +5,7 @@ typedef struct procStruct procStruct;
 
 typedef struct procStruct * procPtr;
 
+
 struct procStruct {
    procPtr         nextProcPtr;
    procPtr         childProcPtr;
@@ -19,6 +20,9 @@ struct procStruct {
    unsigned int    stackSize;
    int             status;        /* READY, BLOCKED, QUIT, etc. */
    /* other fields as needed... */
+   int 			   quitStatus;
+   procPtr		   parent;
+   procPtr		   unjoinedchildProcPtr;
 };
 
 struct psrBits {
@@ -40,4 +44,5 @@ union psrValues {
 #define MAXPRIORITY 1
 #define SENTINELPID 1
 #define SENTINELPRIORITY (MINPRIORITY + 1)
+
 
