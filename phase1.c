@@ -208,7 +208,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
-
+    // TODO call dispatcher once it is ready
+    
     return procSlot;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
@@ -286,6 +287,7 @@ void quit(int status)
 void dispatcher(void)
 {
     procPtr nextProcess = NULL;
+    // TODO nextProcess should point to next process in ReadyList
 
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */
