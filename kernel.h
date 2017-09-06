@@ -22,7 +22,7 @@ struct procStruct {
    /* other fields as needed... */
    int 			   quitStatus;
    procPtr		   parent;
-   procPtr		   unjoinedchildProcPtr;
+   procPtr		   unjoinedChildProcPtr;
 };
 
 struct psrBits {

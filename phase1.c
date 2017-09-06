@@ -63,22 +63,22 @@ void startup(int argc, char *argv[])
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
 	
 	for (int i = 0; i < MAXPROC; i++){
-		procTable[i].nextProcPtr = NULL; 			/*procPtr*/
-        procTable[i].childProcPtr = NULL;			/*procPtr*/
-        procTable[i].nextSiblingPtr = NULL; 		/*procPtr*/
-        procTable[i].name = NULL;     				/* char *: process's name */
-        procTable[i].startArg = NULL;  				/* char: args passed to process */
-     	procTable[i].state = NULL;          		/* USLOSS_Context: current context for process */
-        procTable[i].pid = -1;              		/* short: process id */
-        procTable[i].priority = -1;  				/* int */
-   		procTable[i].startFunc = NULL;   			/* int (* startFunc) (char *): function where process begins -- launch */
-   		procTable[i].stack = NULL; 					/* Char* */
-   		procTable[i].stackSize = 0;					/* unsigned int    */
-        procTable[i].status = -1;        			/* int: READY, BLOCKED, QUIT, etc. */
+		ProcTable[i].nextProcPtr = NULL; 			/*procPtr*/
+        ProcTable[i].childProcPtr = NULL;			/*procPtr*/
+        ProcTable[i].nextSiblingPtr = NULL; 		/*procPtr*/
+        ProcTable[i].name[0] = '\0';     				/* char *: process's name */
+        ProcTable[i].startArg[0] = '\0';  				/* char: args passed to process */
+     	// ProcTable[i].state = NULL;          		/* USLOSS_Context: current context for process */
+        ProcTable[i].pid = -1;              		/* short: process id */
+        ProcTable[i].priority = -1;  				/* int */
+   		ProcTable[i].startFunc = NULL;   			/* int (* startFunc) (char *): function where process begins -- launch */
+   		ProcTable[i].stack = NULL; 					/* Char* */
+   		ProcTable[i].stackSize = 0;					/* unsigned int    */
+        ProcTable[i].status = -1;        			/* int: READY, BLOCKED, QUIT, etc. */
    		/* other fields as needed... */
-   		procTable[i].quitStatus = 0;				/*process quit(quitStatus); */
-   		procTable[i].parent = NULL;					/*a process' parent ptr */
-   		procTable[i].unjoinedQuitChildren = NULL; 	/*procPtr of quit children pre-join */
+   		ProcTable[i].quitStatus = 0;				/*process quit(quitStatus); */
+   		ProcTable[i].parent = NULL;					/*a process' parent ptr */
+   		ProcTable[i].unjoinedChildProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		
 	}
     
@@ -180,7 +180,21 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
 
     // Is there room in the process table? What is the next PID?
-    
+    int i;
+    for (i = 1; i <= MAXPROC; i++) {
+        if (ProcTable[i % 50].pid == -1) {
+            procSlot = i;
+            ProcTable[i].pid = nextPid++;
+            break;
+        }
+    }
+    if (i == MAXPROC + 1) {
+        if (DEBUG && debugflag) {
+            USLOSS_Console("fork1(): no room ot ProcTable\n");
+        }
+        return -1;
+    }
+
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
@@ -197,6 +211,15 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     else
         strcpy(ProcTable[procSlot].startArg, arg);
 
+    if (DEBUG && debugflag) {
+        USLOSS_Console("fork1(): setting stackSize\n");
+    }
+    ProcTable[procSlot].stackSize = stacksize;
+
+    if (DEBUG && debugflag) {
+        USLOSS_Console("fork1(): malloc stack\n");
+    }
+    ProcTable[procSlot].stack = malloc(ProcTable[procSlot].stackSize);
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
 
