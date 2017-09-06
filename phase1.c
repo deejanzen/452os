@@ -78,7 +78,7 @@ void startup(int argc, char *argv[])
    		/* other fields as needed... */
    		procTable[i].quitStatus = 0;				/*process quit(quitStatus); */
    		procTable[i].parent = NULL;					/*a process' parent ptr */
-   		procTable[i].unjoinedQuitChildren = NULL; 	/*procPtr of quit children pre-join 
+   		procTable[i].unjoinedQuitChildren = NULL; 	/*procPtr of quit children pre-join */
    		
 	}
     
