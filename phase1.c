@@ -56,7 +56,6 @@ void startup(int argc, char *argv[])
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
-    // TODO initialize ProcTable to values other than 0
     for (int i = 0; i < MAXPROC; i++) {
         ProcTable[i].nextProcPtr = NULL;
         ProcTable[i].childProcPtr = NULL;
@@ -155,14 +154,22 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("fork1(): stack size too small");
         return -2;
     }
 
     // Is there room in the process table? What is the next PID?
-    for (int i = 0; i < MAXPROC; i++) {
-        if (ProcTable[i].pid == 0) {
+    int i;
+    for (i = 1; i <= MAXPROC; i++) {
+        if (ProcTable[i % MAXPROC].pid == 0) {
             procSlot = i;
+            break;
         }
+    }
+    // If ProcTable is full return -1
+    if (i == MAXPROC + 1) {
+        return -1;
     }
 
     // fill-in entry in process table */
@@ -181,9 +188,16 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     else
         strcpy(ProcTable[procSlot].startArg, arg);
 
+    ProcTable[procSlot].stackSize = stacksize;
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): malloc stackSize\n");
+    ProcTable[procSlot].stack = malloc(ProcTable[procSlot].stackSize);
+
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
 
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): calling USLOSS_ContextInit\n");
     USLOSS_ContextInit(&(ProcTable[procSlot].state),
                        ProcTable[procSlot].stack,
                        ProcTable[procSlot].stackSize,
