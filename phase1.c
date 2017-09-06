@@ -19,6 +19,7 @@ int sentinel (char *);
 extern int start1 (char *);
 void dispatcher(void);
 void launch();
+void checkKernelMode();
 static void checkDeadlock();
 
 
@@ -142,16 +143,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): creating process %s\n", name);
 
-    // test if in kernel mode; halt if in user mode
-    int cur_mode = USLOSS_PsrGet();
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
+    checkKernelMode();
 
-    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("fork1(): current mode not kernel\n");
-        USLOSS_Console("halting...\n");
-        USLOSS_Halt(0);
-    }
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK) {
         if (DEBUG && debugflag)
@@ -164,6 +157,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     for (i = 1; i <= MAXPROC; i++) {
         if (ProcTable[i % MAXPROC].pid == 0) {
             procSlot = i;
+            ProcTable[procSlot].pid = nextPid++;
             break;
         }
     }
@@ -188,11 +182,13 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     else
         strcpy(ProcTable[procSlot].startArg, arg);
 
+    // set up stack
     ProcTable[procSlot].stackSize = stacksize;
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): malloc stackSize\n");
     ProcTable[procSlot].stack = malloc(ProcTable[procSlot].stackSize);
 
+    ProcTable[procSlot].priority = priority;
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
 
@@ -333,3 +329,16 @@ void disableInterrupts()
     // halt USLOSS
 
 } /* disableInterrupts */
+
+void checkKernelMode() {
+    // test if in kernel mode; halt if in user mode
+    int cur_mode = USLOSS_PsrGet();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
+
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("fork1(): current mode not kernel\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(0);
+    }
+}
