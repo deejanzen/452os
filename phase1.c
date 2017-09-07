@@ -235,24 +235,33 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // More stuff to do here...
     //add to Readylist in-order
     if (ReadyList == NULL){
-    	USLOSS_Console("Creating ReadyList with: %s\n",ProcTable[procSlot].name);
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("Creating ReadyList with: %s\n",ProcTable[procSlot].name);
+    	}
     	ReadyList = &ProcTable[procSlot];
     }else if (ProcTable[procSlot].priority <= ReadyList->priority ){
-    	USLOSS_Console("Adding to HEAD of ReadyList: %s\n", ProcTable[procSlot].name);
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("Adding to HEAD of ReadyList: %s\n", ProcTable[procSlot].name);
+    	}
     	ProcTable[procSlot].nextProcPtr = ReadyList;
     	ReadyList = &ProcTable[procSlot];
     }else {
     	procPtr temp = ReadyList;
     	while(temp->nextProcPtr != NULL){
 			if (ProcTable[procSlot].priority <= temp->nextProcPtr->priority){
-				USLOSS_Console("Adding to MID of ReadyList: %s\n", ProcTable[procSlot].name);
+				if (DEBUG && debugflag) {
+					USLOSS_Console("Adding to MID of ReadyList: %s\n", ProcTable[procSlot].name);
+				
+				}
 				ProcTable[procSlot].nextProcPtr = temp->nextProcPtr;
 				temp->nextProcPtr = &ProcTable[procSlot];
 			}
 			temp = temp->nextProcPtr;
     	}
     	//end of list
-    	USLOSS_Console("Adding to END of ReadyList: %s\n", ProcTable[procSlot].name);
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("Adding to END of ReadyList: %s\n", ProcTable[procSlot].name);
+    	}
     	temp->nextProcPtr = &ProcTable[procSlot];
     }
     
