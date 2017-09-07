@@ -20,6 +20,9 @@ extern int start1 (char *);
 void dispatcher(void);
 void launch();
 void checkKernelMode();
+void enableInterrupts();
+void disableInterrupts();
+void insertWithPriority(procPtr rl, procPtr p, int priority);
 static void checkDeadlock();
 
 
@@ -145,6 +148,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     checkKernelMode();
 
+    disableInterrupts();
+
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK) {
         if (DEBUG && debugflag)
@@ -204,8 +209,18 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
-    // TODO call dispatcher once it is ready
+    // add process to parent's children
+    if (Current->childProcPtr == NULL) {
+        // process has no children yet. add the new process
+        Current->childProcPtr = &ProcTable[procSlot];
+    }
     
+    // add process to ready list
+    insertWithPriority(ReadyList, &ProcTable[procSlot], ProcTable[procSlot].priority);
+    // call dispatcher
+    // enable interrupts
+    enableInterrupts();
+
     return procSlot;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
@@ -225,6 +240,7 @@ void launch()
         USLOSS_Console("launch(): started\n");
 
     // Enable interrupts
+    enableInterrupts();
 
     // Call the function passed to fork1, and capture its return value
     result = Current->startFunc(Current->startArg);
@@ -285,6 +301,12 @@ void dispatcher(void)
     procPtr nextProcess = NULL;
     // TODO nextProcess should point to next process in ReadyList
 
+    // Andrea notes
+    // remove first proc from ReadyList (Current)
+    // Usloss context switch from old to nextProcess
+    // can have fields in ProcStruct that are just for readylist
+    // 
+
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */
 
@@ -327,8 +349,26 @@ void disableInterrupts()
     // turn the interrupts OFF iff we are in kernel mode
     // if not in kernel mode, print an error message and
     // halt USLOSS
+    int cur_mode = USLOSS_PsrGet();
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("Not in kernel mode");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
 
+    USLOSS_PsrSet(cur_mode & ~USLOSS_PSR_CURRENT_INT);
 } /* disableInterrupts */
+
+void enableInterrupts() {
+    int cur_mode = USLOSS_PsrGet();
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("Not in kernel mode");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+
+    USLOSS_PsrSet(cur_mode | USLOSS_PSR_CURRENT_INT);
+}
 
 void checkKernelMode() {
     // test if in kernel mode; halt if in user mode
@@ -339,6 +379,10 @@ void checkKernelMode() {
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
         USLOSS_Console("fork1(): current mode not kernel\n");
         USLOSS_Console("halting...\n");
-        USLOSS_Halt(0);
+        USLOSS_Halt(1);
     }
+}
+
+void insertWithPriority(procPtr rl, procPtr p, int priority) {
+
 }
