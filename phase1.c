@@ -306,6 +306,10 @@ void dispatcher(void)
     // Usloss context switch from old to nextProcess
     // can have fields in ProcStruct that are just for readylist
     // 
+    nextProcess = ReadyList;
+    ReadyList = ReadyList->nextProcPtr;
+
+    USLOSS_ContextSwitch(&Current->state, &nextProcess->state);
 
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */
