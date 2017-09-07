@@ -210,10 +210,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     // More stuff to do here...
     // add process to parent's children
-    if (Current->childProcPtr == NULL) {
-        // process has no children yet. add the new process
-        Current->childProcPtr = &ProcTable[procSlot];
-    }
     
     // add process to ready list
     insertWithPriority(ReadyList, &ProcTable[procSlot], ProcTable[procSlot].priority);
@@ -388,5 +384,7 @@ void checkKernelMode() {
 }
 
 void insertWithPriority(procPtr rl, procPtr p, int priority) {
-
+    if (rl == NULL) {
+        rl = p;
+    }
 }
