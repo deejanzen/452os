@@ -210,6 +210,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     // More stuff to do here...
     // add process to parent's children
+    if (Current->pid != 0) {
+        procPtr tmp = Current->childProcPtr;
+        
     
     // add process to ready list
     insertWithPriority(ReadyList, &ProcTable[procSlot], ProcTable[procSlot].priority);
@@ -296,18 +299,27 @@ void dispatcher(void)
 {
     procPtr nextProcess = NULL;
     // TODO nextProcess should point to next process in ReadyList
+    checkKernelMode();
+    disableInterrupts();
 
     // Andrea notes
     // remove first proc from ReadyList (Current)
     // Usloss context switch from old to nextProcess
     // can have fields in ProcStruct that are just for readylist
     // 
+    if (ReadyList == NULL) {
+        if (DEBUG && debugflag) {
+            USLOSS_Console("dispatcher(): ready list is null");
+            return;
+        }
+    }
     nextProcess = ReadyList;
     ReadyList = ReadyList->nextProcPtr;
 
-    USLOSS_ContextSwitch(&Current->state, &nextProcess->state);
 
     p1_switch(Current->pid, nextProcess->pid);
+    enableInterrupts();
+    USLOSS_ContextSwitch(&Current->state, &nextProcess->state);
 } /* dispatcher */
 
 

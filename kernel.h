@@ -19,7 +19,14 @@ struct procStruct {
    unsigned int    stackSize;
    int             status;        /* READY, BLOCKED, QUIT, etc. */
    /* other fields as needed... */
+   procPtr         parentProcPtr;
 };
+
+#define READY 1
+#define RUNNING 2
+#define QUIT 4
+#define ZAPBLOCK 8
+#define JOINBLOCK 16
 
 struct psrBits {
     unsigned int curMode:1;
