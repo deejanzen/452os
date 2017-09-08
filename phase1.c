@@ -233,13 +233,16 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
+    
+    //set status
+     ProcTable[procSlot].status = READY;
     //add to Readylist in-order
     if (ReadyList == NULL){
     	if (DEBUG && debugflag) {
     		USLOSS_Console("Creating ReadyList with: %s\n",ProcTable[procSlot].name);
     	}
     	ReadyList = &ProcTable[procSlot];
-    }else if (ProcTable[procSlot].priority <= ReadyList->priority ){
+    }else if (ProcTable[procSlot].priority < ReadyList->priority ){
     	if (DEBUG && debugflag) {
     		USLOSS_Console("Adding to HEAD of ReadyList: %s\n", ProcTable[procSlot].name);
     	}
@@ -248,7 +251,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }else {
     	procPtr temp = ReadyList;
     	while(temp->nextProcPtr != NULL){
-			if (ProcTable[procSlot].priority <= temp->nextProcPtr->priority){
+			if (ProcTable[procSlot].priority < temp->nextProcPtr->priority){
 				if (DEBUG && debugflag) {
 					USLOSS_Console("Adding to MID of ReadyList: %s\n", ProcTable[procSlot].name);
 				
@@ -348,7 +351,7 @@ int join(int *status)
     //	(a)Return the pid and quit status of one quit child 
     //	   and finish the clean up of that child’s process table entry.
     //	(b)Report on quit children in the order the children quit().
-    //if (Current->unjoinedQuitChildren != NULL){
+    //if (Current->unjoinedQuitChildren != NULL && Current->status != JOIN){
     	//*status = Current->unjoinedQuitChildren->quitStatus;
     	//int unjoinedPid = Current->unjoinedQuitChildren->pid;
     	
@@ -366,13 +369,22 @@ int join(int *status)
     
     
     if (Current->unjoinedQuitChildren == NULL){
-    	//WAIT: set status to JOINING and call dispatcher()
-    	Current->status = 3;
+    	//WAIT: set status to JOIN and call dispatcher()
+    	Current->status = JOIN;
     	dispatcher();
     }else{
+    	//disable interupts here?
     	*status = Current->unjoinedQuitChildren->quitStatus;
     	int unjoinedPid = Current->unjoinedQuitChildren->pid;
+    	Current->status = READY;
+    	
 		//cleanup ProcStruct
+		
+		//clear pcb from unjoinedQuitChildren list
+		//procPtr cleanup = Current->unjoinedQuitChildren;
+    	//Current->unjoinedQuitChildren = Current->unjoinedQuitChildren->unjoinedSiblingProcPtr;
+		
+		return unjoinedPid;
     }
     
     //the process was zapped while waiting for a child to quit RETURN -1
@@ -415,16 +427,19 @@ void quit(int status)
     //	(1)Parent has already done a join(), OR
     
     //check if JOINING
-    if (Current->parent.status == 3){
+    if (Current->parent.status == JOIN){
     	Current->parent.unjoinedChildProcPtr = Current;
     	//set status to QUIT
+    	Current->status = QUIT;
     	//cleanup
+    	
     	//dispatcher();
     	
     }else{
     //	(2)Parent has not (yet) done a join()
-    	
+ 	//add Current to Current->parent.unjoinedChildProcPtr list
     }
+    
     //Unblock processes that zap’d this process
     
     
@@ -448,20 +463,30 @@ void dispatcher(void)
 {
     procPtr nextProcess = NULL;
     
-    	//determine next Process to run
-    	nextProcess = Current->
-		Current = ReadyList;
+    //determine next Process to run
+    procPtr temp = ReadyList;
+    if (temp->priority < Current->priority){
+    	Current = temp;
+    }
+    else{
+    	while (temp->nextProcPtr != NULL){
     	
-    	//initial call of USLOSS_ContextSwitch
-    	if (Current->pid == nextProcess->pid){
-    		USLOSS_ContextSwitch(null, nextProcess);
-    	}else{
-    	    USLOSS_ContextSwitch(Current, nextProcess);
     	}
+    }
     	
-
-
-    p1_switch(Current->pid, nextProcess->pid);
+    //initial call of USLOSS_ContextSwitch
+    if (Current->pid == nextProcess->pid){
+    	p1_switch(Current->pid, nextProcess->pid);
+    	//enable interrupts
+    	
+    	USLOSS_ContextSwitch(null, nextProcess);
+    }else{
+    	p1_switch(Current->pid, nextProcess->pid);
+    	//enable interrupts
+    	
+    	USLOSS_ContextSwitch(Current, nextProcess);
+    }
+    	
 } /* dispatcher */
 
 
