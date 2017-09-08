@@ -79,7 +79,7 @@ void startup(int argc, char *argv[])
    		ProcTable[i].quitStatus = 0;				/*process quit(quitStatus); */
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildProcPtr = NULL; 	/*procPtr of quit children pre-join */
-   		
+   		ProcTable[i].unjoinedSiblingProcPtr = NULL;
 	}
     
     // Initialize the Ready list, etc.
@@ -265,8 +265,17 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	temp->nextProcPtr = &ProcTable[procSlot];
     }
     
-    //call dispatcher()
-    //dispatcher();
+    //set Current, call dispatcher() if NOT sentinel. 
+    //DO NOT CALL dispatcher() on sentinel fork1()!!!
+    if (ProcTable[procSlot].priority != 6){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("Calling dispatcher() on: %s\n", ProcTable[procSlot].name);
+    	}
+    	Current = ProcTable[procSlot];
+    	
+    	//call dispatcher()
+    	dispatcher();
+    }
 
     return procSlot;
 } /* fork1 */
@@ -329,7 +338,9 @@ int join(int *status)
     
     //(1)The process has no children. (What happens?)
     if (Current->childProcPtr == NULL){
-    	USLOSS_Console("Process %d has no children\n", Current->pid);
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("Process %d has no children\n", Current->pid);
+    	}
     	return -2;
     }
     
@@ -340,8 +351,11 @@ int join(int *status)
     //if (Current->unjoinedQuitChildren != NULL){
     	//*status = Current->unjoinedQuitChildren->quitStatus;
     	//int unjoinedPid = Current->unjoinedQuitChildren->pid;
-    	//cleanup ProcStruct;
-    	//
+    	
+    	//cleanup ProcStruct
+    	//procPtr cleanup = Current->unjoinedQuitChildren;
+    	//Current->unjoinedQuitChildren = Current->unjoinedQuitChildren->unjoinedSiblingProcPtr;
+    	
     	//return unjoinedPid;
     //}
     
@@ -350,7 +364,16 @@ int join(int *status)
     //			quit status of the child that quit.
     //	(b)Where does the parent find these?
     
-    //blockMe(JOINING) //#define JOINING 2 /*or something */
+    
+    if (Current->unjoinedQuitChildren == NULL){
+    	//WAIT: set status to JOINING and call dispatcher()
+    	Current->status = 3;
+    	dispatcher();
+    }else{
+    	*status = Current->unjoinedQuitChildren->quitStatus;
+    	int unjoinedPid = Current->unjoinedQuitChildren->pid;
+		//cleanup ProcStruct
+    }
     
     //the process was zapped while waiting for a child to quit RETURN -1
     return -1;  // -1 is not correct! Here to prevent warning.
@@ -382,14 +405,26 @@ void quit(int status)
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
 	if (Current->childProcPtr != NULL){
-    	USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
+    	if (DEBUG && debugflag){
+    		USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
+    	}
     	USLOSS_Halt(1);
     }
     
     //Cleanup the process table entry (but not entirely, see join()
     //	(1)Parent has already done a join(), OR
-    //	(2)Parent has not (yet) done a join()
     
+    //check if JOINING
+    if (Current->parent.status == 3){
+    	Current->parent.unjoinedChildProcPtr = Current;
+    	//set status to QUIT
+    	//cleanup
+    	//dispatcher();
+    	
+    }else{
+    //	(2)Parent has not (yet) done a join()
+    	
+    }
     //Unblock processes that zap’d this process
     
     
@@ -411,15 +446,27 @@ void quit(int status)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
-    procPtr nextProcess = ReadyList;
-    ReadyList = ReadyList->nextProcPtr;
+    procPtr nextProcess = NULL;
+    
+    	//determine next Process to run
+    	nextProcess = Current->
+		Current = ReadyList;
+    	
+    	//initial call of USLOSS_ContextSwitch
+    	if (Current->pid == nextProcess->pid){
+    		USLOSS_ContextSwitch(null, nextProcess);
+    	}else{
+    	    USLOSS_ContextSwitch(Current, nextProcess);
+    	}
+    	
+
 
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */
 
 
 /* ------------------------------------------------------------------------
-   Name - sentinel
+   Name - sentinel 
    Purpose - The purpose of the sentinel routine is two-fold.  One
              responsibility is to keep the system going when all other
              processes are blocked.  The other is to detect and report
