@@ -22,9 +22,12 @@ void launch();
 void checkKernelMode();
 void enableInterrupts();
 void disableInterrupts();
-void insertWithPriority(procPtr rl, procPtr p, int priority);
 static void checkDeadlock();
-
+void newProcList(procList *p);
+void enqueue(procList *p, procPtr);
+procPtr dequeue(procList *p);
+procPtr peek(procList *p);
+void removeChild(procList *p, procPtr);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -35,7 +38,7 @@ int debugflag = 1;
 procStruct ProcTable[MAXPROC];
 
 // Process lists
-static procPtr ReadyList;
+static procList ReadyList[SENTINELPRIORITY];
 
 // current process ID
 procPtr Current;
@@ -57,6 +60,8 @@ void startup(int argc, char *argv[])
 {
     int result; /* value returned by call to fork1() */
 
+    checkKernelMode();
+
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
@@ -67,21 +72,33 @@ void startup(int argc, char *argv[])
         ProcTable[i].name[0] = '\0';     /* process's name */
         ProcTable[i].startArg[0] = '\0';  /* args passed to process */
         ProcTable[i].state.start = NULL;             /* current context for process */
-//        ProcTable[i].state.context = 0;             /* current context for process */
         ProcTable[i].state.pageTable = NULL;             /* current context for process */
-        ProcTable[i].pid = 0;               /* process id */
+        ProcTable[i].pid = -1;               /* process id */
         ProcTable[i].priority = 0;
         ProcTable[i].startFunc = NULL;   /* function where process begins -- launch */
         ProcTable[i].stack = NULL;
         ProcTable[i].stackSize = 0;
         ProcTable[i].status = 0;        /* READY, BLOCKED, QUIT, etc. */
+        ProcTable[i].parentProcPtr = NULL;
+        newProcList(&ProcTable[i].children);
+        ProcTable[i].quit = 0;
+        newProcList(&ProcTable[i].deadChildren);
+        ProcTable[i].deadSibling = NULL;
+        ProcTable[i].zap = 0;
+        newProcList(&ProcTable[i].zapList);
+        ProcTable[i].startTime = 0;
+        ProcTable[i].procTime = 0;
+        ProcTable[i].sliceTime = 0;
     }
 
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
-    ReadyList = NULL;
+    for (int i = 0; i < SENTINELPRIORITY; i++) {
+        newProcList(&ReadyList[i]);
+    }
 
+    Current = &ProcTable[0];
     // Initialize the clock interrupt handler
 
     // startup a sentinel process
@@ -96,6 +113,7 @@ void startup(int argc, char *argv[])
         }
         USLOSS_Halt(1);
     }
+    Current = &ProcTable[result];
   
     // start the test process
     if (DEBUG && debugflag)
@@ -122,6 +140,8 @@ void startup(int argc, char *argv[])
    ----------------------------------------------------------------------- */
 void finish(int argc, char *argv[])
 {
+    checkKernelMode();
+
     if (DEBUG && debugflag)
         USLOSS_Console("in finish...\n");
 } /* finish */
@@ -160,7 +180,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[i % MAXPROC].pid == 0) {
+        if (ProcTable[i % MAXPROC].pid == -1) {
             procSlot = i;
             ProcTable[procSlot].pid = nextPid++;
             break;
@@ -210,17 +230,24 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     // More stuff to do here...
     // add process to parent's children
-    if (Current->pid != 0) {
-        procPtr tmp = Current->childProcPtr;
-        
+    if (Current->pid == -1) {
+        enqueue(&Current->children, &ProcTable[procSlot]);
+        ProcTable[procSlot].parentProcPtr = Current;
+    }
+
+    enqueue(&ReadyList[ProcTable[procSlot].priority-1], &ProcTable[procSlot]);
+    ProcTable[procSlot].status = READY;
+
+    if (startFunc != sentinel) {
+        dispatcher();
+    }
     
     // add process to ready list
-    insertWithPriority(ReadyList, &ProcTable[procSlot], ProcTable[procSlot].priority);
     // call dispatcher
     // enable interrupts
     enableInterrupts();
 
-    return procSlot;  // -1 is not correct! Here to prevent warning.
+    return ProcTable[procSlot].pid;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -266,7 +293,50 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
-    return -1;  // -1 is not correct! Here to prevent warning.
+    checkKernelMode();
+    disableInterrupts();
+
+    if (Current->children.size == 0 && Current->deadChildren.size == 0) {
+        return -2;
+    }
+
+    if (Current->deadChildren.size == 0) {
+//        block(JOINBLOCK);
+    }
+
+    procPtr child = dequeue(&Current->deadChildren);
+    int childPid;
+    childPid = child->pid;
+
+    ProcTable[childPid].nextProcPtr = NULL;
+    ProcTable[childPid].childProcPtr = NULL;
+    ProcTable[childPid].nextSiblingPtr = NULL;
+    ProcTable[childPid].name[0] = '\0';     /* process's name */
+    ProcTable[childPid].startArg[0] = '\0';  /* args passed to process */
+    ProcTable[childPid].state.start = NULL;             /* current context for process */
+    ProcTable[childPid].state.pageTable = NULL;             /* current context for process */
+    ProcTable[childPid].pid = -1;               /* process id */
+    ProcTable[childPid].priority = 0;
+    ProcTable[childPid].startFunc = NULL;   /* function where process begins -- launch */
+    ProcTable[childPid].stack = NULL;
+    ProcTable[childPid].stackSize = 0;
+    ProcTable[childPid].status = 0;        /* READY, BLOCKED, QUIT, etc. */
+    ProcTable[childPid].parentProcPtr = NULL;
+    newProcList(&ProcTable[childPid].children);
+    ProcTable[childPid].quit = 0;
+    newProcList(&ProcTable[childPid].deadChildren);
+    ProcTable[childPid].deadSibling = NULL;
+    ProcTable[childPid].zap = 0;
+    newProcList(&ProcTable[childPid].zapList);
+    ProcTable[childPid].startTime = 0;
+    ProcTable[childPid].procTime = 0;
+    ProcTable[childPid].sliceTime = 0;
+
+    if (Current->zapList.size != 0) {
+        childPid = -1;
+    }
+    enableInterrupts();
+    return childPid;
 } /* join */
 
 
@@ -281,6 +351,91 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
+    checkKernelMode();
+    disableInterrupts();
+
+    procPtr child = peek(&Current->children);
+    while (child != NULL) { 
+        if (child->status != QUIT) {
+            USLOSS_Console("quit(): process has live children");
+            USLOSS_Console("halting...\n");
+            USLOSS_Halt(1);
+        }
+        child = child->nextSiblingPtr;
+    }
+
+    Current->status = QUIT;
+    Current->quit = status;
+    dequeue(&ReadyList[Current->priority-1]);
+    if (Current->parentProcPtr != NULL) {
+        removeChild(&Current->parentProcPtr->children, Current);
+        enqueue(&Current->parentProcPtr->deadChildren, Current);
+
+        if (Current->parentProcPtr->status == JOINBLOCK) {
+            Current->parentProcPtr->status = READY;
+            enqueue(&ReadyList[Current->parentProcPtr->priority-1], Current->parentProcPtr);
+        }
+    }
+
+    while (Current->zapList.size > 0) {
+        procPtr zapper = dequeue(&Current->zapList);
+        zapper->status = READY;
+        enqueue(&ReadyList[zapper->priority-1], zapper);
+    }
+
+    while (Current->deadChildren.size > 0) {
+        procPtr child = dequeue(&Current->deadChildren);
+
+        ProcTable[child->pid].nextProcPtr = NULL;
+        ProcTable[child->pid].childProcPtr = NULL;
+        ProcTable[child->pid].nextSiblingPtr = NULL;
+        ProcTable[child->pid].name[0] = '\0';     /* process's name */
+        ProcTable[child->pid].startArg[0] = '\0';  /* args passed to process */
+        ProcTable[child->pid].state.start = NULL;             /* current context for process */
+        ProcTable[child->pid].state.pageTable = NULL;             /* current context for process */
+        ProcTable[child->pid].pid = -1;               /* process id */
+        ProcTable[child->pid].priority = 0;
+        ProcTable[child->pid].startFunc = NULL;   /* function where process begins -- launch */
+        ProcTable[child->pid].stack = NULL;
+        ProcTable[child->pid].stackSize = 0;
+        ProcTable[child->pid].status = 0;        /* READY, BLOCKED, QUIT, etc. */
+        ProcTable[child->pid].parentProcPtr = NULL;
+        newProcList(&ProcTable[child->pid].children);
+        ProcTable[child->pid].quit = 0;
+        newProcList(&ProcTable[child->pid].deadChildren);
+        ProcTable[child->pid].deadSibling = NULL;
+        ProcTable[child->pid].zap = 0;
+        newProcList(&ProcTable[child->pid].zapList);
+        ProcTable[child->pid].startTime = 0;
+        ProcTable[child->pid].procTime = 0;
+        ProcTable[child->pid].sliceTime = 0;
+    }
+    if (Current->parentProcPtr == NULL) {
+        ProcTable[Current->pid].nextProcPtr = NULL;
+        ProcTable[Current->pid].childProcPtr = NULL;
+        ProcTable[Current->pid].nextSiblingPtr = NULL;
+        ProcTable[Current->pid].name[0] = '\0';     /* process's name */
+        ProcTable[Current->pid].startArg[0] = '\0';  /* args passed to process */
+        ProcTable[Current->pid].state.start = NULL;             /* current context for process */
+        ProcTable[Current->pid].state.pageTable = NULL;             /* current context for process */
+        ProcTable[Current->pid].pid = -1;               /* process id */
+        ProcTable[Current->pid].priority = 0;
+        ProcTable[Current->pid].startFunc = NULL;   /* function where process begins -- launch */
+        ProcTable[Current->pid].stack = NULL;
+        ProcTable[Current->pid].stackSize = 0;
+        ProcTable[Current->pid].status = 0;        /* READY, BLOCKED, QUIT, etc. */
+        ProcTable[Current->pid].parentProcPtr = NULL;
+        newProcList(&ProcTable[Current->pid].children);
+        ProcTable[Current->pid].quit = 0;
+        newProcList(&ProcTable[Current->pid].deadChildren);
+        ProcTable[Current->pid].deadSibling = NULL;
+        ProcTable[Current->pid].zap = 0;
+        newProcList(&ProcTable[Current->pid].zapList);
+        ProcTable[Current->pid].startTime = 0;
+        ProcTable[Current->pid].procTime = 0;
+        ProcTable[Current->pid].sliceTime = 0;
+    }
+
     p1_quit(Current->pid);
 } /* quit */
 
@@ -307,15 +462,30 @@ void dispatcher(void)
     // Usloss context switch from old to nextProcess
     // can have fields in ProcStruct that are just for readylist
     // 
-    if (ReadyList == NULL) {
-        if (DEBUG && debugflag) {
-            USLOSS_Console("dispatcher(): ready list is null");
-            return;
+    if (Current->status == RUNNING) {
+        Current->status = READY;
+        dequeue(&ReadyList[Current->priority-1]);
+        enqueue(&ReadyList[Current->priority-1], Current);
+    }
+
+    for (int i = 0; i < SENTINELPRIORITY; i++) {
+        if (ReadyList[i].size > 0) {
+            nextProcess = peek(&ReadyList[i]);
+            break;
         }
     }
-    nextProcess = ReadyList;
-    ReadyList = ReadyList->nextProcPtr;
 
+    procPtr prev = Current;
+    Current = nextProcess;
+    Current->status = RUNNING;
+
+    if (prev != Current) {
+        if (prev->pid > -1) {
+//            prev->procTime += USLOSS_Clock() - prev->startTime;
+        }
+        Current->sliceTime = 0;
+//        Current->startTime = USLOSS_Clock();
+    }
 
     p1_switch(Current->pid, nextProcess->pid);
     enableInterrupts();
@@ -395,8 +565,80 @@ void checkKernelMode() {
     }
 }
 
-void insertWithPriority(procPtr rl, procPtr p, int priority) {
-    if (rl == NULL) {
-        rl = p;
+void newProcList(procList *p) {
+    p->head = NULL;
+    p->tail = NULL;
+    p->size = 0;
+    p->type = 0;
+}
+
+void enqueue(procList *l, procPtr p) {
+    if (l->head == NULL && l->tail == NULL) {
+        l->head = l->tail = p;
+    }
+    else {
+        if (l->type == READYLIST) {
+            l->tail->nextProcPtr = p;
+        } else if (l->type == CHILDREN) {
+            l->tail->nextSiblingPtr = p;
+        } else {
+            l->tail->deadSibling = p;
+        }
+        l->tail = p;
+   }
+   l->size++;
+}
+
+procPtr dequeue(procList *l) {
+    procPtr tmp = l->head;
+    if (l->head == NULL) {
+        return NULL;
+    }
+    if (l->head == l->tail) {
+        l->head = l->tail = NULL;
+    }
+    else {
+        if (l->type == READYLIST) {
+            l->head = l->head->nextProcPtr;
+        } else if (l->type == CHILDREN) {
+            l->head = l->head->nextSiblingPtr;
+        } else {
+            l->head = l->head->deadSibling;
+        }
+    }
+    l->size--;
+    return tmp;    
+}
+
+procPtr peek(procList *l) {
+    if (l->head == NULL) {
+        return NULL;
+    }
+    return l->head;
+}
+
+void removeChild(procList *l, procPtr child) {
+    if (l->head == NULL || l->type != CHILDREN)
+        return;
+
+    if (l->head == child) {
+        dequeue(l);
+        return;
+    }
+
+    procPtr prev = l->head;
+    procPtr p = l->head->nextSiblingPtr;
+
+    while (p != NULL) {
+        if (p == child) {
+            if (p == l->tail)
+                l->tail = prev;
+            else
+                prev->nextSiblingPtr = p->nextSiblingPtr->nextSiblingPtr;
+            l->size--;
+        }
+        prev = p;
+        p = p->nextSiblingPtr;
     }
 }
+

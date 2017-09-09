@@ -5,6 +5,13 @@ typedef struct procStruct procStruct;
 
 typedef struct procStruct * procPtr;
 
+typedef struct procList {
+    procPtr head;
+    procPtr tail;
+    int size;
+    int type;
+} procList;
+
 struct procStruct {
    procPtr         nextProcPtr;
    procPtr         childProcPtr;
@@ -20,6 +27,15 @@ struct procStruct {
    int             status;        /* READY, BLOCKED, QUIT, etc. */
    /* other fields as needed... */
    procPtr         parentProcPtr;
+   procList        children;
+   int             quit;
+   procList        deadChildren;
+   procPtr         deadSibling;
+   int             zap;
+   procList        zapList;
+   int             startTime;
+   int             procTime;
+   int             sliceTime;
 };
 
 #define READY 1
@@ -27,6 +43,11 @@ struct procStruct {
 #define QUIT 4
 #define ZAPBLOCK 8
 #define JOINBLOCK 16
+
+#define READYLIST 0
+#define CHILDREN 1
+#define DEADCHILDREN 2
+#define ZAP 4
 
 struct psrBits {
     unsigned int curMode:1;
