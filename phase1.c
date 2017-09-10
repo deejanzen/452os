@@ -343,6 +343,7 @@ void launch()
         USLOSS_Console("launch(): started\n");
 
     // Enable interrupts
+    enableInterrupts();
 
     // Call the function passed to fork1, and capture its return value
     result = Current->startFunc(Current->startArg);
@@ -709,13 +710,14 @@ void checkKernelMode()
 
 void dumpProcesses()
 {
-    USLOSS_Console("PROC\tPID\tPPID\tPRIORITY\n");
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
         USLOSS_Console("%d:\t", i);
         USLOSS_Console("%d\t", ProcTable[index].pid);
         USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
         USLOSS_Console("%d\t", ProcTable[index].priority);
+        USLOSS_Console("%d\t", ProcTable[index].status);
         USLOSS_Console("\n");
     }
 }
