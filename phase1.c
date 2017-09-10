@@ -24,6 +24,7 @@ void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
 void dumpProcesses();
+int getpid();
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -721,4 +722,8 @@ void dumpProcesses()
         USLOSS_Console("%s", ProcTable[index].name);
         USLOSS_Console("\n");
     }
+}
+
+int getpid() {
+    return Current->pid;
 }
