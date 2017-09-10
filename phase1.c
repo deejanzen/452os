@@ -20,7 +20,9 @@ extern int start1 (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
-
+void checkKernelMode();
+void enableInterrupts();
+void disableInterrupts();
 
 
 
@@ -646,5 +648,38 @@ void disableInterrupts()
     // turn the interrupts OFF iff we are in kernel mode
     // if not in kernel mode, print an error message and
     // halt USLOSS
+    int cur_mode = USLOSS_PsrGet();
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("Not in kernel mode");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
 
+    USLOSS_PsrSet(cur_mode & ~USLOSS_PSR_CURRENT_INT);
 } /* disableInterrupts */
+
+void enableInterrupts()
+{
+    int cur_mode = USLOSS_PsrGet();
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("Not in kernel mode");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+
+    USLOSS_PsrSet(cur_mode | USLOSS_PSR_CURRENT_INT);
+}
+
+void checkKernelMode()
+{
+    // test if in kernel mode; halt if in user mode
+    int cur_mode = USLOSS_PsrGet();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
+
+    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("fork1(): current mode not kernel\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+}
