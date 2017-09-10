@@ -21,8 +21,8 @@ void dispatcher(void);
 void launch();
 static void checkDeadlock();
 void checkKernelMode();
-void enableInterrupts();
-void disableInterrupts();
+int enableInterrupts();
+int disableInterrupts();
 
 
 
@@ -643,7 +643,7 @@ static void checkDeadlock()
 /*
  * Disables the interrupts.
  */
-void disableInterrupts()
+int disableInterrupts()
 {
     // turn the interrupts OFF iff we are in kernel mode
     // if not in kernel mode, print an error message and
@@ -655,10 +655,10 @@ void disableInterrupts()
         USLOSS_Halt(1);
     }
 
-    USLOSS_PsrSet(cur_mode & ~USLOSS_PSR_CURRENT_INT);
+    return USLOSS_PsrSet(cur_mode & ~USLOSS_PSR_CURRENT_INT);
 } /* disableInterrupts */
 
-void enableInterrupts()
+int enableInterrupts()
 {
     int cur_mode = USLOSS_PsrGet();
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
@@ -667,7 +667,7 @@ void enableInterrupts()
         USLOSS_Halt(1);
     }
 
-    USLOSS_PsrSet(cur_mode | USLOSS_PSR_CURRENT_INT);
+    return USLOSS_PsrSet(cur_mode | USLOSS_PSR_CURRENT_INT);
 }
 
 void checkKernelMode()
