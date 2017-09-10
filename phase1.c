@@ -710,7 +710,7 @@ void checkKernelMode()
 
 void dumpProcesses()
 {
-    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\n");
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
         USLOSS_Console("%d:\t", i);
@@ -718,6 +718,7 @@ void dumpProcesses()
         USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
         USLOSS_Console("%d\t", ProcTable[index].priority);
         USLOSS_Console("%d\t", ProcTable[index].status);
+        USLOSS_Console("%s", ProcTable[index].name);
         USLOSS_Console("\n");
     }
 }
