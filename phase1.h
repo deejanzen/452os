@@ -31,6 +31,15 @@
 
 #define MAXSYSCALLS  50
 
+/*
+ * Process Status codes
+ */
+ 
+#define READY        0     
+#define RUNNING      1 
+#define BLOCKED      2 
+#define JOIN         3
+#define QUIT         4
 
 /* 
  * Function prototypes for this phase.
