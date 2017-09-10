@@ -246,14 +246,14 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
      ProcTable[procSlot].status = READY;
      
     //set parent
-    if (DEBUG && debugflag) {
-    	USLOSS_Console("fork1(): Child %s parent if %s\n",ProcTable[procSlot].name,
-    														   Current->name);
-    }
     ProcTable[procSlot].parent = Current;
     
     //set child list
     if(Current){
+		if (DEBUG && debugflag) {
+    		USLOSS_Console("fork1(): parent: %s\n",Current->name);
+    	}
+		
 		if (Current->childProcPtr == NULL){
 			if (DEBUG && debugflag) {
     			USLOSS_Console("fork1(): Creating ChildList with: %s\n",ProcTable[procSlot].name);
@@ -406,7 +406,7 @@ int join(int *status)
     if (Current->unjoinedChildrenProcPtr == NULL){
     	//WAIT: set status to JOIN and call dispatcher()
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): %s has no unjoined children. JOIN.\n", Current->name);
+    		USLOSS_Console("join(): %s has no unjoined children. JOINing.\n", Current->name);
     	}
     	Current->status = JOIN;
     	dispatcher();
@@ -465,24 +465,22 @@ void quit(int status)
     
     //Cleanup the process table entry (but not entirely, see join()
     //	(1)Parent has already done a join(), OR
-    
-    //check if JOINING
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("quit():  %s quiting for joining %s.\n", Current->name,
-    																Current->parent->name);
-    }
-    
-    if (Current->parent->status == JOIN){
+    if (Current->parent && Current->parent->status == JOIN){
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): parent %s in JOIN.\n", Current->parent->name);
+    		USLOSS_Console("quit(): parent: %s in %d.\n", Current->parent->name, Current->parent->status);
+    		USLOSS_Console("quit(): child:  %s in %d \n", 
+    						Current->name,
+    						Current->status);
     	}
     	Current->parent->unjoinedChildrenProcPtr = Current;
     	//set status to QUIT
     	Current->status = QUIT;
+    	
+    	//set quitStatus
+    	Current->quitStatus = status;
     	//cleanup
     	
     	Current->parent->status = READY;
-    	dispatcher();
     	
     }else{
     //	(2)Parent has not (yet) done a join()
@@ -494,7 +492,33 @@ void quit(int status)
     
     //May have children who have quit(), but for whom a join() was not 
     //(and now will not) be done (This isnt error)
+    //Remove quit() process from Readylist in-order
+    if (Current->pid == ReadyList->pid ){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): Removing HEAD of ReadyList: %s\n", Current->name);
+    	}
+    	ReadyList = Current->nextProcPtr;
+    }else {
+    	procPtr temp = ReadyList;
+    	while(temp->nextProcPtr != NULL){
+			if (Current->pid == temp->nextProcPtr->pid){
+				if (DEBUG && debugflag) {
+					USLOSS_Console("quit(): Removing %s from ReadyList in front of %s\n", 
+								   temp->nextProcPtr->name,
+								   temp->nextProcPtr->nextProcPtr->name);
+				
+				}
+				temp->nextProcPtr = temp->nextProcPtr->nextProcPtr;
+				break;
+			}
+			temp = temp->nextProcPtr;
+    	}
+    	//end of list
+    }
+    
     p1_quit(Current->pid);
+    dispatcher();
+    
 } /* quit */
 
 
@@ -523,48 +547,58 @@ void dispatcher(void)
     	
     	Current->status = RUNNING;
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): initial call of USLOSS_ContextSwitch\n");
+    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, &Current->state)\n");
     	}
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): Current: %s\n", Current->name);
-    }
+    
    
     procPtr nextProcess = NULL;
     procPtr temp = ReadyList;
     
     //determine next Process to run
-    if (temp->priority < Current->priority && temp->status == READY /*and has time slice, READY etc*/ ){
+    if ((temp->priority <= Current->priority && temp->status != JOIN)|| 
+    	 temp->status != JOIN ){
     	nextProcess = temp;
+
     }
     else{
     	while (temp->nextProcPtr != NULL){
-    		if(temp->nextProcPtr->priority <= Current->priority && temp->status == READY){
+    		if((temp->nextProcPtr->priority <= Current->priority && temp->status != JOIN)||
+    		    temp->status != JOIN){
     			nextProcess = temp;
     			break;
     		}
    			temp = temp->nextProcPtr;
     	}
-    	
-    	//nothing has higher priority than Current
-    	if(!nextProcess){
-    		if (DEBUG && debugflag) {
-    			USLOSS_Console("dispatcher(): nextProcess NULL. continuing with %s.\n", Current->name);
-    		} 
-    		return;
+    }
+    
+    //nothing has higher priority than Current
+    if(!nextProcess ){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): nextProcess NULL. returning to %s.\n", Current->name);
+    	} 
+    	return;
+    }else if (nextProcess->pid == Current->pid){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): nextProcess == Current. returning to %s.\n", Current->name);
     	}
+    	return;
     }
     
     if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): nextProcess: %s\n", nextProcess->name);
+    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
+    		Current->name,
+    		nextProcess->name);
     }
     	
     p1_switch(Current->pid, nextProcess->pid);
     //enable interrupts
     	
-    Current->status =     READY;
-    nextProcess->status = RUNNING;
+    if (Current->status == RUNNING)
+    	Current->status = READY;
+    if (nextProcess->status == READY)
+    	nextProcess->status = RUNNING;
     	
     temp = Current;
     Current = nextProcess;
