@@ -489,7 +489,7 @@ void dispatcher(void)
 
     p1_switch(Current->pid, nextProcess->pid);
     enableInterrupts();
-    USLOSS_ContextSwitch(NULL, &nextProcess->state);
+    USLOSS_ContextSwitch(&prev->state, &nextProcess->state);
 } /* dispatcher */
 
 
