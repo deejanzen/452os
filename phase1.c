@@ -23,7 +23,7 @@ static void checkDeadlock();
 void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
-
+void dumpProcesses();
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -149,6 +149,11 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
+    checkKernelMode();
+    int psr = disableInterrupts();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): disableInterrupts returned %d\n", psr);
+    
 	if(name == NULL || startFunc == NULL ){
 		USLOSS_Console("fork1(): name is NULL\n");
 		return -1; 
@@ -316,6 +321,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	}
     	dispatcher();
     }
+
+    psr = enableInterrupts();
 
     return procSlot;
 } /* fork1 */
@@ -596,7 +603,8 @@ void dispatcher(void)
     	
     p1_switch(Current->pid, nextProcess->pid);
     //enable interrupts
-    	
+    enableInterrupts();	
+
     if (Current->status == RUNNING)
     	Current->status = READY;
     if (nextProcess->status == READY)
@@ -681,5 +689,18 @@ void checkKernelMode()
         USLOSS_Console("fork1(): current mode not kernel\n");
         USLOSS_Console("halting...\n");
         USLOSS_Halt(1);
+    }
+}
+
+void dumpProcesses()
+{
+    USLOSS_Console("PROC\tPID\tPPID\tPRIORITY\n");
+    for (int i = 1; i <= MAXPROC; i++) {
+        int index = i % MAXPROC;
+        USLOSS_Console("%d:\t", i);
+        USLOSS_Console("%d\t", ProcTable[index].pid);
+        USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
+        USLOSS_Console("%d\t", ProcTable[index].priority);
+        USLOSS_Console("\n");
     }
 }
