@@ -28,6 +28,7 @@ void enqueue(procList *p, procPtr);
 procPtr dequeue(procList *p);
 procPtr peek(procList *p);
 void removeChild(procList *p, procPtr);
+void dumpProcesses();
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -300,11 +301,11 @@ int join(int *status)
         return -2;
     }
 
-    if (Current->deadChildren.size == 0) {
-//        block(JOINBLOCK);
-    }
+//    if (Current->deadChildren.size == 0) {
+//        blockMe(JOINBLOCK);
+//    }
 
-    procPtr child = dequeue(&Current->deadChildren);
+    procPtr child = dequeue(&Current->children);
     int childPid;
     childPid = child->pid;
 
@@ -332,9 +333,9 @@ int join(int *status)
     ProcTable[childPid].procTime = 0;
     ProcTable[childPid].sliceTime = 0;
 
-    if (Current->zapList.size != 0) {
-        childPid = -1;
-    }
+//    if (Current->zapList.size != 0) {
+//        childPid = -1;
+//    }
     enableInterrupts();
     return childPid;
 } /* join */
@@ -642,3 +643,22 @@ void removeChild(procList *l, procPtr child) {
     }
 }
 
+void dumpProcesses() {
+    for (int i = 1; i <= MAXPROC; i++) {
+        int index = i % MAXPROC;
+        // print pid
+        USLOSS_Console("pid: %d\t", ProcTable[index].pid);
+        if (ProcTable[index].parentProcPtr ==  NULL) {
+            USLOSS_Console("parent pid: NULL\t");
+        }
+        else {
+            USLOSS_Console("parent pid: %d\t", ProcTable[index].parentProcPtr->pid);
+        }
+        USLOSS_Console("priority: %d\t", ProcTable[index].priority);
+        USLOSS_Console("status: %d\t", ProcTable[index].status);
+        USLOSS_Console("num children: %d\t", ProcTable[index].children.size);
+
+
+        USLOSS_Console("\n");
+    }
+}
