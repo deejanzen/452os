@@ -548,6 +548,9 @@ void dispatcher(void)
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): starting\n");
     }
+
+    checkKernelMode();
+    disableInterrupts();
     
     //initial call of USLOSS_ContextSwitch
     if(!Current){
