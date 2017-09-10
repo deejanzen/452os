@@ -30,7 +30,7 @@ int getpid();
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -133,6 +133,8 @@ void finish(int argc, char *argv[])
 {
     if (DEBUG && debugflag)
         USLOSS_Console("in finish...\n");
+
+    USLOSS_Console("All processes completed.\n");
 } /* finish */
 
 /* ------------------------------------------------------------------------
