@@ -30,7 +30,7 @@ int getpid();
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -324,6 +324,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
 
     psr = enableInterrupts();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): enableInterrupts returned %d\n", psr);
 
     return procSlot;
 } /* fork1 */
