@@ -29,7 +29,7 @@ int disableInterrupts();
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -637,6 +637,21 @@ int sentinel (char *dummy)
 /* check to determine if deadlock has occurred... */
 static void checkDeadlock()
 {
+	if (ReadyList->priority == 6){
+		if (DEBUG && debugflag){
+        	USLOSS_Console("sentinel(): called checkDeadlock().\n");
+        	USLOSS_Console("sentinel(): calling halt(0).\n");
+        }
+        ReadyList = NULL;
+        USLOSS_Halt(0);
+	}else{
+		if (DEBUG && debugflag){
+        	USLOSS_Console("sentinel(): called checkDeadlock().\n");
+        	USLOSS_Console("sentinel(): calling halt(1).\n");
+        }
+        USLOSS_Halt(1);
+	}
+	
 } /* checkDeadlock */
 
 
