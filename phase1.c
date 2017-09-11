@@ -20,7 +20,7 @@ extern int start1 (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
-void checkKernelMode();
+void checkKernelMode(char *);
 int enableInterrupts();
 int disableInterrupts();
 void dumpProcesses();
@@ -329,9 +329,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	dispatcher();
     }
 
-    psr = enableInterrupts();
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): enableInterrupts returned %d\n", psr);
+    enableInterrupts();
 
     return procSlot;
 } /* fork1 */
@@ -649,9 +647,6 @@ void dispatcher(void)
     		USLOSS_Console("dispatcher(): starting\n");
     }
 
-    checkKernelMode();
-    disableInterrupts();
-    
     checkKernelMode("dispatcher");
     
     //initial call of USLOSS_ContextSwitch
@@ -856,7 +851,7 @@ int getpid() {
 }
 
 int zap(int pid) {
-    checkKernelMode();
+    checkKernelMode("zap");
     disableInterrupts();
 
     // check 
