@@ -29,7 +29,7 @@ int disableInterrupts();
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -366,6 +366,9 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
+	//disable interupts
+    //disableInterrupts();
+	
 	if (DEBUG && debugflag)
         USLOSS_Console("join(): started\n");
 	
@@ -374,101 +377,110 @@ int join(int *status)
 
     //join() function: There are three cases
     
+    int unjoinedPid;
     //(1)The process has no children. (What happens?)
     if (Current->childProcPtr == NULL){
     	if (DEBUG && debugflag) {
     		USLOSS_Console("Process %d has no children\n", Current->pid);
     	}
     	return -2;
-    }
-    
-    //(2)Child(ren) quit() before the join() occurred
-    //	(a)Return the pid and quit status of one quit child 
-    //	   and finish the clean up of that child’s process table entry.
-    //	(b)Report on quit children in the order the children quit().
-    //if (Current->unjoinedQuitChildren != NULL && Current->status != JOIN){
-    	//*status = Current->unjoinedChildrenProcPtr->quitStatus;
-    	//int unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
-    	
-    	//cleanup ProcStruct
-    	//procPtr cleanup = Current->unjoinedQuitChildren;
-    	//Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
-    	
-    	//return unjoinedPid;
-    //}
-    
-    //(3)No (unjoined) child has quit() ... must wait.
-    //	(a)how? After wait is over: return the pid and 
-    //			quit status of the child that quit.
-    //	(b)Where does the parent find these?
-    if (Current->unjoinedChildrenProcPtr == NULL){
-    	//WAIT: set status to JOIN and call dispatcher()
+    }else {
+    	if (Current->unjoinedChildrenProcPtr != NULL ){
+    	//(2)Child(ren) quit() before the join() occurred
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): %s has no unjoined children. stat: %d.\n", Current->name,
-    																			 Current->status);
+    		USLOSS_Console("join(): %s has unjoined child: %s.\n", Current->name,
+    															   Current->unjoinedChildrenProcPtr->name);
     	}
-    	Current->status = JOIN;
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): calling dispatcher()\n");
-    	}
-    	dispatcher();
-    	
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): continuing after JOIN\n");
-    	}
-    	//disable interupts here?
-    	//disableInterrupts();
+    	//	(a)Return the pid and quit status of one quit child 
     	*status = Current->unjoinedChildrenProcPtr->quitStatus;
-    	int unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
-
-		//remove child from Current->childProcPtr list
-    	if (Current->childProcPtr->pid == unjoinedPid){
-    		if (DEBUG && debugflag) {
-    			USLOSS_Console("join(): removing %s HEAD of childProcPtr\n", Current->childProcPtr->name);
-    		}
-    		Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
-    	}
-    	else {
-    		procPtr temp = Current->childProcPtr;
-    		while(temp->nextSiblingPtr != NULL){
-    			if (temp->nextSiblingPtr->pid == unjoinedPid){
-    				if (DEBUG && debugflag) {
-    					USLOSS_Console("join(): removing %s from childProcPtr\n", Current->childProcPtr->name);
-    				}
-    				temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
-    				break;
-    			}
-    			temp = temp->nextSiblingPtr;
-    		}
+    	unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
     	
+    	//	   and finish the clean up of that child’s process table entry.(later)
+    	//	(b)Report on quit children in the order the children quit().(HEAD)    	
+    	//  (see below)
     	}
-		//update no of children after removal
-		Current->numberOfChildren -=1;
-		
-		//cleanup ProcStruct
-		Current->unjoinedChildrenProcPtr->quitStatus = 0;
-		Current->unjoinedChildrenProcPtr->pid = -1;
-		Current->unjoinedChildrenProcPtr->status = INIT;
-		Current->unjoinedChildrenProcPtr->name[0] = '\0';
-		
-		//free stack memory
-		if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): free() \n");
+    	//(3)No (unjoined) child has quit() ... must wait.
+   		//	(a)how? After wait is over: return the pid and 
+   		//			quit status of the child that quit.
+   		//	(b)Where does the parent find these?
+    	else { /*(Current->unjoinedChildrenProcPtr == NULL)*/
+    		//WAIT: set status to JOIN and call dispatcher()
+    		if (DEBUG && debugflag) {
+    			USLOSS_Console("join(): %s will JOIN. stat: %d.\n", Current->name,
+    															    Current->status);
+    		}
+    		
+    		Current->status = JOIN;
+    		
+    		if (DEBUG && debugflag) {
+    			USLOSS_Console("join(): calling dispatcher()\n");
+    		}
+    		
+    		//reenable interupts
+    		//enableInterrupts();
+    		
+    		dispatcher();
+    		
+    		//disable interrupts
+    		//disableInterrupts();
+    		
+    		if (DEBUG && debugflag) {
+    			USLOSS_Console("join(): continuing after JOIN\n");
+    		}
+    		
+    		*status = Current->unjoinedChildrenProcPtr->quitStatus;
+    		unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
+    	}//end (3)No (unjoined) child has quit() ... must wait.
+    }//end of else Current->childProcPtr != NULL
+    
+	//remove child from Current->childProcPtr list
+    if (Current->childProcPtr->pid == unjoinedPid){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("join(): removing %s HEAD of childProcPtr list\n", Current->childProcPtr->name);
     	}
-		free(Current->unjoinedChildrenProcPtr->stack);
+    	Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
+    }
+    else {
+    	procPtr temp = Current->childProcPtr;
+    	while(temp->nextSiblingPtr != NULL){
+    		if (temp->nextSiblingPtr->pid == unjoinedPid){
+    			if (DEBUG && debugflag) {
+    				USLOSS_Console("join(): removing %s from childProcPtr list\n", Current->childProcPtr->name);
+    			}
+    			temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
+    			break;
+    		}
+    		temp = temp->nextSiblingPtr;
+    	}
+    	
+    }
+	
+	//update no of children after removal
+	Current->numberOfChildren -=1;
 		
-		//clear ptr to unjoinedQuitChildren list
-		Current->unjoinedChildrenProcPtr = NULL;
+	//cleanup ProcStruct
+	Current->unjoinedChildrenProcPtr->quitStatus = 0;
+	Current->unjoinedChildrenProcPtr->pid = -1;
+	Current->unjoinedChildrenProcPtr->status = INIT;
+	Current->unjoinedChildrenProcPtr->name[0] = '\0';
 		
+	//free stack memory
+	if (DEBUG && debugflag) {
+    	USLOSS_Console("join(): free() \n");
+    }
+	free(Current->unjoinedChildrenProcPtr->stack);
 		
-		
-		//reenable interupts here?
-    	//enableInterrupts();
-		return unjoinedPid;
-    }//end (3)No (unjoined) child has quit() ... must wait.
+	//clear ptr to unjoinedQuitChildren list
+	//Current->unjoinedChildrenProcPtr = NULL;
+	Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
+	
+	//reenable interupts
+    //enableInterrupts();
     
     //the process was zapped while waiting for a child to quit RETURN -1
-    return -1;  // -1 is not correct! Here to prevent warning.
+    if(0 /*isZapped()*/) return -1;  // -1 is not correct! Here to prevent warning.
+	
+	return unjoinedPid;
 } /* join */
 
 
@@ -504,8 +516,6 @@ void quit(int status)
     //set quitStatus
     Current->quitStatus = status;
     
-    
-    
 	//(1)Parent has already done a join(), OR		
     //(2)Parent has not (yet) done a join()
 
@@ -534,8 +544,29 @@ void quit(int status)
     	Current->parent->status = READY;
 	}
     
+    if (DEBUG && debugflag) {
+    		USLOSS_Console("quit():Cleaning up process table.\n", Current->name);
+    }
     //Cleanup the process table entry (but not entirely, see join()
- 
+    //Current->nextProcPtr = NULL;       /*MOVED TO AFTER ReadyList remove*/
+    //ProcTable[i].childProcPtr = NULL;
+	//ProcTable[i].nextSiblingPtr = NULL;
+    //Current->name[0] = '\0'; JOIN
+	Current->startArg[0] = '\0';
+    //state
+    //ProcTable[i].pid = -1; JOIN needs
+    Current->priority = -1;
+   	Current->startFunc = NULL;
+   	//free(Current->stack); JOIN
+   	//ProcTable[i].stackSize = 0;	
+   	Current->stackSize = 0;
+    Current->status = QUIT;
+	/* other fields as needed... */
+   	//ProcTable[i].quitStatus = 0; JOIN needs
+   	//Current->parent == NULL;
+   	//Current->unjoinedChildrenProcPtr = NULL;
+	//Current->unjoinedSiblingProcPtr = NULL;
+   	Current->numberOfChildren = 0;
     
     //Unblock processes that zap’d this process
     
@@ -543,6 +574,9 @@ void quit(int status)
     //May have children who have quit(), but for whom a join() was not 
     //(and now will not) be done (This isnt error)
     //TODO clear unjoinedChildrenProcPtr
+    
+    //Current->unjoinedChildrenProcPtr = NULL;
+	//Current->unjoinedSiblingProcPtr = NULL;
     
     
     //Remove quit() process from Readylist in-order
@@ -569,32 +603,14 @@ void quit(int status)
     	//end of list
     }
     
-
-    //clean PCB
+    //clean up
     Current->nextProcPtr = NULL;
-    //ProcTable[i].childProcPtr = NULL;
-	//ProcTable[i].nextSiblingPtr = NULL;
-    //Current->name[0] = '\0'; JOIN
-	Current->startArg[0] = '\0';
-    //state
-    //ProcTable[i].pid = -1; JOIN needs
-    Current->priority = -1;
-   	Current->startFunc = NULL;
-   	//free(Current->stack); JOIN
-   	//ProcTable[i].stackSize = 0;	
-   	Current->stackSize = 0;
-    Current->status = QUIT;
-	/* other fields as needed... */
-   	//ProcTable[i].quitStatus = 0; JOIN needs
-   	//Current->parent == NULL;
-   	Current->unjoinedChildrenProcPtr = NULL;
-   	Current->unjoinedSiblingProcPtr = NULL;
-   	Current->numberOfChildren = 0;
     
+    p1_quit(Current->pid);
+
     //enable interrupts
     enableInterrupts();
      
-    p1_quit(Current->pid);
     if (DEBUG && debugflag) {
     		USLOSS_Console("quit(): calling dispatcher().\n");
     }
@@ -816,6 +832,45 @@ void checkKernelMode(char *nameOfFunc)
 //     		temp = Current;
 //     	}
 //     }
+
+// if (Current->unjoinedChildrenProcPtr != NULL ){
+//     	//(2)Child(ren) quit() before the join() occurred
+//     	//	(a)Return the pid and quit status of one quit child 
+//     	//	   and finish the clean up of that child’s process table entry.
+//     	//	(b)Report on quit children in the order the children quit().
+//     	//if (Current->unjoinedQuitChildren != NULL && Current->status != JOIN){
+//     	//*status = Current->unjoinedChildrenProcPtr->quitStatus;
+//     	//int unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
+//     	
+//     	//cleanup ProcStruct
+//     	//procPtr cleanup = Current->unjoinedQuitChildren;
+//     	//Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
+//     	
+//     	//return unjoinedPid;
+//     	}
+//     	//(3)No (unjoined) child has quit() ... must wait.
+//    		//	(a)how? After wait is over: return the pid and 
+//    		//			quit status of the child that quit.
+//    		//	(b)Where does the parent find these?
+//     	else { /*(Current->unjoinedChildrenProcPtr == NULL)*/
+//     		//WAIT: set status to JOIN and call dispatcher()
+//     		if (DEBUG && debugflag) {
+//     			USLOSS_Console("join(): %s wil JOIN. stat: %d.\n", Current->name,
+//     															   Current->status);
+//     		}
+//     		
+//     		Current->status = JOIN;
+//     		
+//     		if (DEBUG && debugflag) {
+//     			USLOSS_Console("join(): calling dispatcher()\n");
+//     		}
+//     		dispatcher();
+//     		
+//     		if (DEBUG && debugflag) {
+//     			USLOSS_Console("join(): continuing after JOIN\n");
+//     		}
+//     	}//end (3)No (unjoined) child has quit() ... must wait.
+//     }//end of else Current->childProcPtr != NULL
 
 
 
