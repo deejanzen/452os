@@ -25,6 +25,7 @@ int enableInterrupts();
 int disableInterrupts();
 void dumpProcesses();
 int getpid();
+int zap(int pid);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -83,6 +84,7 @@ void startup(int argc, char *argv[])
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
+        ProcTable[i].zapStatus = 0;
 	}
     
     // Initialize the Ready list, etc.
@@ -733,4 +735,13 @@ void dumpProcesses()
 
 int getpid() {
     return Current->pid;
+}
+
+int zap(int pid) {
+    checkKernelMode();
+    disableInterrupts();
+
+    // check 
+
+    enableInterrupts();
 }
