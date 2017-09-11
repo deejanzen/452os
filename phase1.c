@@ -744,4 +744,5 @@ int zap(int pid) {
     // check 
 
     enableInterrupts();
+    return -1;
 }
