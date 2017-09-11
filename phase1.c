@@ -855,6 +855,64 @@ void checkKernelMode(char *nameOfFunc)
 }
 
 
+void dumpProcesses()
+{
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
+    for (int i = 1; i <= MAXPROC; i++) {
+        int index = i % MAXPROC;
+        USLOSS_Console("%d:\t", i);
+        USLOSS_Console("%d\t", ProcTable[index].pid);
+        USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
+        USLOSS_Console("%d\t", ProcTable[index].priority);
+        USLOSS_Console("%d\t", ProcTable[index].status);
+        USLOSS_Console("%d\t", ProcTable[index].numberOfChildren);
+        USLOSS_Console("%s", ProcTable[index].name);
+        USLOSS_Console("\n");
+    }
+}
+
+int getpid() {
+    return Current->pid;
+}
+
+int zap(int pid) {
+    checkKernelMode("zap");
+    disableInterrupts();
+
+    if (Current == &ProcTable[pid]) {
+        USLOSS_Console("Process tried to zap itself\n");
+        USLOSS_Halt(1);
+    }
+
+    if (ProcTable[pid].pid == -1) {
+        USLOSS_Console("Tried to zap a nonexistent process");
+        USLOSS_Halt(1);
+    }
+
+    ProcTable[pid].zapStatus = 1; // mark process as zapped
+
+    while (1) {
+        // Current process was zapped wile in zap
+        if (isZapped()) {
+            return -1;
+        }
+        // block until process quits
+        if (ProcTable[pid].quitStatus == QUIT) {
+            if (DEBUG && debugflag) {
+                USLOSS_Console("zap(): zapped process quit\n");
+            }
+            break;
+        }
+    }
+
+    enableInterrupts();
+    return 0;
+}
+
+
+int isZapped() {
+    return Current->zapStatus;
+}
 
 //OLD WORKING CODE
 //    (1)Parent has already done a join(), OR
