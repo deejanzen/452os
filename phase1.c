@@ -20,12 +20,9 @@ extern int start1 (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
-void checkKernelMode(char *);
+void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
-void dumpProcesses();
-int getpid();
-int zap(int pid);
 
 
 
@@ -85,7 +82,6 @@ void startup(int argc, char *argv[])
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
-        ProcTable[i].zapStatus = 0;
    		ProcTable[i].numberOfChildren = 0;
    		
 	}
@@ -138,8 +134,6 @@ void finish(int argc, char *argv[])
 {
     if (DEBUG && debugflag)
         USLOSS_Console("in finish...\n");
-
-    USLOSS_Console("All processes completed.\n");
 } /* finish */
 
 /* ------------------------------------------------------------------------
@@ -263,7 +257,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 		
 		if (Current->childProcPtr == NULL){
 			if (DEBUG && debugflag) {
-    			USLOSS_Console("fork1(): Creating ChildList with: %s pid: %d\n",ProcTable[procSlot].name,
+    			USLOSS_Console("fork1(): creating ChildList with: %s pid: %d\n",ProcTable[procSlot].name,
     																			ProcTable[procSlot].pid);
     		}
     		Current->childProcPtr = &ProcTable[procSlot];
@@ -329,8 +323,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	dispatcher();
     }
 
-    enableInterrupts();
-
     return procSlot;
 } /* fork1 */
 
@@ -390,9 +382,10 @@ int join(int *status)
     
     int unjoinedPid;
     //(1)The process has no children. (What happens?)
-    if (Current->childProcPtr == NULL){
+    if (Current->childProcPtr == NULL && Current->unjoinedChildrenProcPtr == NULL){
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("Process %d has no children\n", Current->pid);
+    		USLOSS_Console("join(): process %s pid: %d has no children\n", Current->name,
+    															           Current->pid);
     	}
     	return -2;
     }else {
@@ -445,26 +438,26 @@ int join(int *status)
     }//end of else Current->childProcPtr != NULL
     
 	//remove child from Current->childProcPtr list
-    if (Current->childProcPtr->pid == unjoinedPid){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): removing %s HEAD of childProcPtr list\n", Current->childProcPtr->name);
-    	}
-    	Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
-    }
-    else {
-    	procPtr temp = Current->childProcPtr;
-    	while(temp->nextSiblingPtr != NULL){
-    		if (temp->nextSiblingPtr->pid == unjoinedPid){
-    			if (DEBUG && debugflag) {
-    				USLOSS_Console("join(): removing %s from childProcPtr list\n", Current->childProcPtr->name);
-    			}
-    			temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
-    			break;
-    		}
-    		temp = temp->nextSiblingPtr;
-    	}
-    	
-    }
+//     if (Current->childProcPtr->pid == unjoinedPid){
+//     	if (DEBUG && debugflag) {
+//     		USLOSS_Console("join(): removing %s HEAD of childProcPtr list\n", Current->childProcPtr->name);
+//     	}
+//     	Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
+//     }
+//     else {
+//     	procPtr temp = Current->childProcPtr;
+//     	while(temp->nextSiblingPtr != NULL){
+//     		if (temp->nextSiblingPtr->pid == unjoinedPid){
+//     			if (DEBUG && debugflag) {
+//     				USLOSS_Console("join(): removing %s from childProcPtr list\n", Current->childProcPtr->name);
+//     			}
+//     			temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
+//     			break;
+//     		}
+//     		temp = temp->nextSiblingPtr;
+//     	}
+//     	
+//     }
 	
 	//update no of children after removal
 	Current->numberOfChildren -=1;
@@ -474,15 +467,14 @@ int join(int *status)
 	Current->unjoinedChildrenProcPtr->pid = -1;
 	Current->unjoinedChildrenProcPtr->status = INIT;
 	Current->unjoinedChildrenProcPtr->name[0] = '\0';
-		
+	
 	//free stack memory
 	if (DEBUG && debugflag) {
     	USLOSS_Console("join(): free() \n");
     }
 	free(Current->unjoinedChildrenProcPtr->stack);
-		
-	//clear ptr to unjoinedQuitChildren list
-	//Current->unjoinedChildrenProcPtr = NULL;
+	
+    //clear ptr to unjoinedQuitChildren list
 	Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
 	
 	//reenable interupts
@@ -531,23 +523,27 @@ void quit(int status)
     //(2)Parent has not (yet) done a join()
 
     //add child to unjoinedChildrenProcPtr
-     if (Current->parent && Current->parent->unjoinedChildrenProcPtr == NULL){
+    if (Current->parent && Current->parent->unjoinedChildrenProcPtr == NULL){
     	//(1)Parent has already done a join(), OR		
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): Creating unjoinedChildren List with %s.\n", Current->name);
+    		USLOSS_Console("quit(): creating %s as   HEAD of %s's unjoinedChildren list.\n", 
+    						Current->name,
+    						Current->parent->name);
     	}
     	Current->parent->unjoinedChildrenProcPtr = Current;
     }
     else if (Current->parent){
     	//(2)Parent has not (yet) done a join()
     	procPtr temp = Current->parent->unjoinedChildrenProcPtr;
-    	while (temp->unjoinedSiblingProcPtr != NULL){
+        while (temp->unjoinedSiblingProcPtr != NULL){
     		temp = temp->unjoinedSiblingProcPtr;
     	}
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): Adding %s to END of unjoinedChildren List.\n", Current->name);
+    		USLOSS_Console("quit(): adding %s to     END of %s's unjoinedChildren List.\n", 
+    					    Current->name,
+    					    Current->parent->name);
     	}
-    	temp = Current;
+    	temp->unjoinedSiblingProcPtr = Current;
     }
     
     if (Current->parent && Current->parent->status == JOIN){
@@ -555,8 +551,35 @@ void quit(int status)
     	Current->parent->status = READY;
 	}
     
+    
+    //remove yourself from Current->parent->childProcPtr list
+    if (Current->parent && Current->parent->childProcPtr->pid == Current->pid){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): removing %s from HEAD of %s's childProcPtr list\n", 
+    						Current->name,
+    						Current->parent->name);
+    	}
+    	Current->parent->childProcPtr = Current->parent->childProcPtr->nextSiblingPtr;
+    }
+    else if (Current->parent){
+    	procPtr temp = Current->parent->childProcPtr;
+    	while(temp->nextSiblingPtr != NULL){
+    		if (temp->nextSiblingPtr->pid == Current->pid){
+    			if (DEBUG && debugflag) {
+    				USLOSS_Console("quit(): removing %s from %s's childProcPtr list\n", 
+    								Current->name,
+    								Current->parent->name);
+    			}
+    			temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
+    			break;
+    		}
+    		temp = temp->nextSiblingPtr;
+    	}
+    	
+    }
+    
     if (DEBUG && debugflag) {
-    		USLOSS_Console("quit():Cleaning up process table.\n", Current->name);
+    		USLOSS_Console("quit(): cleaning up process table.\n", Current->name);
     }
     //Cleanup the process table entry (but not entirely, see join()
     //Current->nextProcPtr = NULL;       /*MOVED TO AFTER ReadyList remove*/
@@ -593,7 +616,7 @@ void quit(int status)
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): Removing HEAD of ReadyList: %s\n", Current->name);
+    		USLOSS_Console("quit(): removing %s as HEAD of ReadyList.\n", Current->name);
     	}
     	ReadyList = Current->nextProcPtr;
     }else {
@@ -601,7 +624,7 @@ void quit(int status)
     	while(temp->nextProcPtr != NULL){
 			if (Current->pid == temp->nextProcPtr->pid){
 				if (DEBUG && debugflag) {
-					USLOSS_Console("quit(): Removing %s from ReadyList in front of %s\n", 
+					USLOSS_Console("quit(): removing %s from ReadyList in front of %s\n", 
 								   temp->nextProcPtr->name,
 								   temp->nextProcPtr->nextProcPtr->name);
 				
@@ -646,7 +669,7 @@ void dispatcher(void)
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): starting\n");
     }
-
+    
     checkKernelMode("dispatcher");
     
     //initial call of USLOSS_ContextSwitch
@@ -831,34 +854,6 @@ void checkKernelMode(char *nameOfFunc)
     }
 }
 
-void dumpProcesses()
-{
-    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\tNAME\n");
-    for (int i = 1; i <= MAXPROC; i++) {
-        int index = i % MAXPROC;
-        USLOSS_Console("%d:\t", i);
-        USLOSS_Console("%d\t", ProcTable[index].pid);
-        USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
-        USLOSS_Console("%d\t", ProcTable[index].priority);
-        USLOSS_Console("%d\t", ProcTable[index].status);
-        USLOSS_Console("%s", ProcTable[index].name);
-        USLOSS_Console("\n");
-    }
-}
-
-int getpid() {
-    return Current->pid;
-}
-
-int zap(int pid) {
-    checkKernelMode("zap");
-    disableInterrupts();
-
-    // check 
-
-    enableInterrupts();
-    return -1;
-}
 
 
 //OLD WORKING CODE
