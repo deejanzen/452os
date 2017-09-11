@@ -35,6 +35,7 @@
  * Process Status codes
  */
  
+#define INIT        -1
 #define READY        0     
 #define RUNNING      1 
 #define BLOCKED      2 

@@ -23,13 +23,13 @@ static void checkDeadlock();
 void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
-void dumpProcesses();
+
 
 
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -82,6 +82,8 @@ void startup(int argc, char *argv[])
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
+   		ProcTable[i].numberOfChildren = 0;
+   		
 	}
     
     // Initialize the Ready list, etc.
@@ -149,11 +151,12 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-    checkKernelMode();
-    int psr = disableInterrupts();
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): disableInterrupts returned %d\n", psr);
-    
+	if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): starting\n");
+        
+    // test if in kernel mode; halt if in user mode
+	checkKernelMode("fork1");
+	
 	if(name == NULL || startFunc == NULL ){
 		USLOSS_Console("fork1(): name is NULL\n");
 		return -1; 
@@ -172,16 +175,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): creating process %s\n", name);
 
-    // test if in kernel mode; halt if in user mode
-	int cur_mode = USLOSS_PsrGet();
-    if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
-
-    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("fork1(): current mode not kernel\n");
-        USLOSS_Console("halting...\n");
-        USLOSS_Halt(0);
-    }
+    
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK) {
         return -2;
@@ -263,18 +257,22 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 		
 		if (Current->childProcPtr == NULL){
 			if (DEBUG && debugflag) {
-    			USLOSS_Console("fork1(): Creating ChildList with: %s\n",ProcTable[procSlot].name);
+    			USLOSS_Console("fork1(): Creating ChildList with: %s pid: %d\n",ProcTable[procSlot].name,
+    																			ProcTable[procSlot].pid);
     		}
     		Current->childProcPtr = &ProcTable[procSlot];
+    		Current->numberOfChildren +=1;
     	}else{
     		procPtr temp = Current->childProcPtr;
     		while(temp->nextSiblingPtr != NULL){ 
     			temp = temp->nextSiblingPtr;
     		}
     		if (DEBUG && debugflag) {
-    			USLOSS_Console("fork1(): adding %s to ChildList\n",ProcTable[procSlot].name);
+    			USLOSS_Console("fork1(): adding %s pid: %d to ChildList\n",ProcTable[procSlot].name,
+    																	   ProcTable[procSlot].pid);
     		}
     		temp->nextSiblingPtr = &ProcTable[procSlot];
+    		Current->numberOfChildren +=1;
    	 	}
     }
     		
@@ -322,8 +320,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	dispatcher();
     }
 
-    psr = enableInterrupts();
-
     return procSlot;
 } /* fork1 */
 
@@ -369,18 +365,12 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
+	if (DEBUG && debugflag)
+        USLOSS_Console("join(): started\n");
+	
 	// test if in kernel mode; halt if in user mode
-	int cur_mode = USLOSS_PsrGet();
-    if (DEBUG && debugflag)
-        USLOSS_Console("join(): psr is %d\n", cur_mode);
+	checkKernelMode("join");
 
-    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("join(): current mode not kernel\n");
-        USLOSS_Console("halting...\n");
-        USLOSS_Halt(0);
-    }
-    
-    
     //join() function: There are three cases
     
     //(1)The process has no children. (What happens?)
@@ -415,21 +405,66 @@ int join(int *status)
     if (Current->unjoinedChildrenProcPtr == NULL){
     	//WAIT: set status to JOIN and call dispatcher()
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("join(): %s has no unjoined children. JOINing.\n", Current->name);
+    		USLOSS_Console("join(): %s has no unjoined children. stat: %d.\n", Current->name,
+    																			 Current->status);
     	}
     	Current->status = JOIN;
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("join(): calling dispatcher()\n");
+    	}
     	dispatcher();
-    
+    	
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("join(): continuing after JOIN\n");
+    	}
     	//disable interupts here?
+    	//disableInterrupts();
     	*status = Current->unjoinedChildrenProcPtr->quitStatus;
     	int unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
+
+		//remove child from Current->childProcPtr list
+    	if (Current->childProcPtr->pid == unjoinedPid){
+    		if (DEBUG && debugflag) {
+    			USLOSS_Console("join(): removing %s HEAD of childProcPtr\n", Current->childProcPtr->name);
+    		}
+    		Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
+    	}
+    	else {
+    		procPtr temp = Current->childProcPtr;
+    		while(temp->nextSiblingPtr != NULL){
+    			if (temp->nextSiblingPtr->pid == unjoinedPid){
+    				if (DEBUG && debugflag) {
+    					USLOSS_Console("join(): removing %s from childProcPtr\n", Current->childProcPtr->name);
+    				}
+    				temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
+    				break;
+    			}
+    			temp = temp->nextSiblingPtr;
+    		}
     	
+    	}
+		//update no of children after removal
+		Current->numberOfChildren -=1;
+		
 		//cleanup ProcStruct
+		Current->unjoinedChildrenProcPtr->quitStatus = 0;
+		Current->unjoinedChildrenProcPtr->pid = -1;
+		Current->unjoinedChildrenProcPtr->status = INIT;
+		Current->unjoinedChildrenProcPtr->name[0] = '\0';
 		
-		//clear pcb from unjoinedQuitChildren list
-		//procPtr cleanup = Current->unjoinedQuitChildren;
-    	//Current->unjoinedQuitChildren = Current->unjoinedQuitChildren->unjoinedSiblingProcPtr;
+		//free stack memory
+		if (DEBUG && debugflag) {
+    		USLOSS_Console("join(): free() \n");
+    	}
+		free(Current->unjoinedChildrenProcPtr->stack);
 		
+		//clear ptr to unjoinedQuitChildren list
+		Current->unjoinedChildrenProcPtr = NULL;
+		
+		
+		
+		//reenable interupts here?
+    	//enableInterrupts();
 		return unjoinedPid;
     }
     
@@ -449,20 +484,15 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {	
+	//disable interrupts
+	disableInterrupts();
+	
 	if (DEBUG && debugflag){
         USLOSS_Console("quit(): starting\n");
     }
 	// test if in kernel mode; halt if in user mode
-	int cur_mode = USLOSS_PsrGet();
-    if (DEBUG && debugflag)
-        USLOSS_Console("quit(): psr is %d\n", cur_mode);
-
-    if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("quit(): current mode not kernel\n");
-        USLOSS_Console("halting...\n");
-        USLOSS_Halt(0);
-    }
-    
+	checkKernelMode("quit");
+	
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
 	// if (Current->childProcPtr != NULL){
@@ -476,20 +506,16 @@ void quit(int status)
     //	(1)Parent has already done a join(), OR
     if (Current->parent && Current->parent->status == JOIN){
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): parent: %s in %d.\n", Current->parent->name, Current->parent->status);
-    		USLOSS_Console("quit(): child:  %s in %d \n", 
-    						Current->name,
-    						Current->status);
+    		USLOSS_Console("quit(): parent: %s stat: %d.\n", Current->parent->name, Current->parent->status);
     	}
     	Current->parent->unjoinedChildrenProcPtr = Current;
-    	//set status to QUIT
-    	Current->status = QUIT;
     	
     	//set quitStatus
     	Current->quitStatus = status;
-    	//cleanup
     	
+    	//set parent to ready from JOIN
     	Current->parent->status = READY;
+    	
     	
     }else{
     //	(2)Parent has not (yet) done a join()
@@ -501,6 +527,7 @@ void quit(int status)
     
     //May have children who have quit(), but for whom a join() was not 
     //(and now will not) be done (This isnt error)
+    
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
     	if (DEBUG && debugflag) {
@@ -525,7 +552,35 @@ void quit(int status)
     	//end of list
     }
     
+
+    //clean PCB
+    Current->nextProcPtr = NULL;
+    //ProcTable[i].childProcPtr = NULL;
+	//ProcTable[i].nextSiblingPtr = NULL;
+    //Current->name[0] = '\0'; JOIN
+	Current->startArg[0] = '\0';
+    //state
+    //ProcTable[i].pid = -1; JOIN needs
+    Current->priority = -1;
+   	Current->startFunc = NULL;
+   	//free(Current->stack); JOIN
+   	//ProcTable[i].stackSize = 0;	
+   	Current->stackSize = 0;
+    Current->status = QUIT;
+	/* other fields as needed... */
+   	//ProcTable[i].quitStatus = 0; JOIN needs
+   	//Current->parent == NULL;
+   	Current->unjoinedChildrenProcPtr = NULL;
+   	Current->unjoinedSiblingProcPtr = NULL;
+   	Current->numberOfChildren = 0;
+    
+    //enable interrupts
+    enableInterrupts();
+     
     p1_quit(Current->pid);
+    if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): calling dispatcher().\n");
+    }
     dispatcher();
     
 } /* quit */
@@ -547,6 +602,8 @@ void dispatcher(void)
     		USLOSS_Console("dispatcher(): starting\n");
     }
     
+    checkKernelMode("dispatcher");
+    
     //initial call of USLOSS_ContextSwitch
     if(!Current){
     	Current = ReadyList;
@@ -556,7 +613,7 @@ void dispatcher(void)
     	
     	Current->status = RUNNING;
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, &Current->state)\n");
+    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
     	}
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
@@ -603,8 +660,7 @@ void dispatcher(void)
     	
     p1_switch(Current->pid, nextProcess->pid);
     //enable interrupts
-    enableInterrupts();	
-
+    	
     if (Current->status == RUNNING)
     	Current->status = READY;
     if (nextProcess->status == READY)
@@ -677,7 +733,7 @@ int disableInterrupts()
         USLOSS_Console("halting...\n");
         USLOSS_Halt(1);
     }
-
+    
     return USLOSS_PsrSet(cur_mode & ~USLOSS_PSR_CURRENT_INT);
 } /* disableInterrupts */
 
@@ -693,29 +749,16 @@ int enableInterrupts()
     return USLOSS_PsrSet(cur_mode | USLOSS_PSR_CURRENT_INT);
 }
 
-void checkKernelMode()
+void checkKernelMode(char *nameOfFunc)
 {
     // test if in kernel mode; halt if in user mode
     int cur_mode = USLOSS_PsrGet();
     if (DEBUG && debugflag)
-        USLOSS_Console("fork1(): psr is %d\n", cur_mode);
+        USLOSS_Console("%s(): psr is %d\n", nameOfFunc, cur_mode);
 
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("fork1(): current mode not kernel\n");
+        USLOSS_Console("%s(): current mode not kernel\n", nameOfFunc);
         USLOSS_Console("halting...\n");
         USLOSS_Halt(1);
-    }
-}
-
-void dumpProcesses()
-{
-    USLOSS_Console("PROC\tPID\tPPID\tPRIORITY\n");
-    for (int i = 1; i <= MAXPROC; i++) {
-        int index = i % MAXPROC;
-        USLOSS_Console("%d:\t", i);
-        USLOSS_Console("%d\t", ProcTable[index].pid);
-        USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
-        USLOSS_Console("%d\t", ProcTable[index].priority);
-        USLOSS_Console("\n");
     }
 }

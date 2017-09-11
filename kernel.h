@@ -24,6 +24,7 @@ struct procStruct {
    procPtr		   parent;
    procPtr		   unjoinedChildrenProcPtr;
    procPtr		   unjoinedSiblingProcPtr;
+   int             numberOfChildren;
 };
 
 struct psrBits {
