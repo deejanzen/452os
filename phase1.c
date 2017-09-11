@@ -29,7 +29,7 @@ int disableInterrupts();
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -275,7 +275,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     		Current->numberOfChildren +=1;
    	 	}
     }
-    		
+    
+    //New processes should be placed at the end of the list of processes with the same priority.		
     //add to Readylist in-order
     if (ReadyList == NULL){
     	if (DEBUG && debugflag) {
@@ -293,9 +294,11 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	while(temp->nextProcPtr != NULL){
 			if (ProcTable[procSlot].priority < temp->nextProcPtr->priority){
 				if (DEBUG && debugflag) {
-					USLOSS_Console("fork1(): Adding %s to ReadyList in front of %s\n", 
+					USLOSS_Console("fork1(): Adding %s p: %d to ReadyList in front of %s p: %d\n", 
 								   ProcTable[procSlot].name,
-								   temp->nextProcPtr->name);
+								   ProcTable[procSlot].priority,
+								   temp->nextProcPtr->name,
+								   temp->nextProcPtr->priority);
 				
 				}
 				ProcTable[procSlot].nextProcPtr = temp->nextProcPtr;
@@ -742,6 +745,27 @@ static void checkDeadlock()
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
         	USLOSS_Console("sentinel(): calling halt(0).\n");
         }
+        //Cleanup the process table entry (but not entirely, see join()
+    	Current->nextProcPtr = NULL;       /*MOVED TO AFTER ReadyList remove*/
+    	Current->childProcPtr = NULL;
+		Current->nextSiblingPtr = NULL;
+    	Current->name[0] = '\0';
+		Current->startArg[0] = '\0';
+    	//state
+    	Current->pid = -1; 
+    	Current->priority = -1;
+   		Current->startFunc = NULL;
+   		free(Current->stack); //JOIN
+   		Current->stackSize = 0;	
+   		Current->stackSize = 0;
+    	Current->status = QUIT;
+		/* other fields as needed... */
+   		Current->quitStatus = 0;
+   		//Current->parent == NULL;
+   		Current->unjoinedChildrenProcPtr = NULL;
+		Current->unjoinedSiblingProcPtr = NULL;
+   		Current->numberOfChildren = 0;
+        
         ReadyList = NULL;
         USLOSS_Halt(0);
 	}else{
