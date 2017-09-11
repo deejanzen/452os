@@ -339,7 +339,8 @@ void launch()
         USLOSS_Console("launch(): started\n");
 
     // Enable interrupts
-
+	enableInterrupts();
+	
     // Call the function passed to fork1, and capture its return value
     result = Current->startFunc(Current->startArg);
 
@@ -400,8 +401,6 @@ int join(int *status)
     //	(a)how? After wait is over: return the pid and 
     //			quit status of the child that quit.
     //	(b)Where does the parent find these?
-    
-    
     if (Current->unjoinedChildrenProcPtr == NULL){
     	//WAIT: set status to JOIN and call dispatcher()
     	if (DEBUG && debugflag) {
@@ -466,7 +465,7 @@ int join(int *status)
 		//reenable interupts here?
     	//enableInterrupts();
 		return unjoinedPid;
-    }
+    }//end (3)No (unjoined) child has quit() ... must wait.
     
     //the process was zapped while waiting for a child to quit RETURN -1
     return -1;  // -1 is not correct! Here to prevent warning.
@@ -495,38 +494,56 @@ void quit(int status)
 	
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
-	// if (Current->childProcPtr != NULL){
-//     	if (DEBUG && debugflag){
-//     		USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
-//     	}
-//     	USLOSS_Halt(1);
-//     }
+	if (Current->childProcPtr != NULL){
+    	if (DEBUG && debugflag){
+    		USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
+    	}
+    	USLOSS_Halt(1);
+    }
     
-    //Cleanup the process table entry (but not entirely, see join()
-    //	(1)Parent has already done a join(), OR
-    if (Current->parent && Current->parent->status == JOIN){
+    //set quitStatus
+    Current->quitStatus = status;
+    
+    
+    
+	//(1)Parent has already done a join(), OR		
+    //(2)Parent has not (yet) done a join()
+
+    //add child to unjoinedChildrenProcPtr
+     if (Current->parent && Current->parent->unjoinedChildrenProcPtr == NULL){
+    	//(1)Parent has already done a join(), OR		
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): parent: %s stat: %d.\n", Current->parent->name, Current->parent->status);
+    		USLOSS_Console("quit(): Creating unjoinedChildren List with %s.\n", Current->name);
     	}
     	Current->parent->unjoinedChildrenProcPtr = Current;
-    	
-    	//set quitStatus
-    	Current->quitStatus = status;
-    	
+    }
+    else if (Current->parent){
+    	//(2)Parent has not (yet) done a join()
+    	procPtr temp = Current->parent->unjoinedChildrenProcPtr;
+    	while (temp->unjoinedSiblingProcPtr != NULL){
+    		temp = temp->unjoinedSiblingProcPtr;
+    	}
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): Adding %s to END of unjoinedChildren List.\n", Current->name);
+    	}
+    	temp = Current;
+    }
+    
+    if (Current->parent && Current->parent->status == JOIN){
     	//set parent to ready from JOIN
     	Current->parent->status = READY;
-    	
-    	
-    }else{
-    //	(2)Parent has not (yet) done a join()
- 	//add Current to Current->parent.unjoinedChildProcPtr list
-    }
+	}
+    
+    //Cleanup the process table entry (but not entirely, see join()
+ 
     
     //Unblock processes that zap’d this process
     
     
     //May have children who have quit(), but for whom a join() was not 
     //(and now will not) be done (This isnt error)
+    //TODO clear unjoinedChildrenProcPtr
+    
     
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
@@ -598,6 +615,7 @@ void quit(int status)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
+    disableInterrupts();
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): starting\n");
     }
@@ -657,18 +675,20 @@ void dispatcher(void)
     		Current->name,
     		nextProcess->name);
     }
-    	
-    p1_switch(Current->pid, nextProcess->pid);
-    //enable interrupts
-    	
+    
     if (Current->status == RUNNING)
     	Current->status = READY;
     if (nextProcess->status == READY)
     	nextProcess->status = RUNNING;
     	
     temp = Current;
-    Current = nextProcess;
-    	
+    Current = nextProcess;	
+    
+    p1_switch(Current->pid, nextProcess->pid);
+    
+    //enable interrupts
+    enableInterrupts();
+
     USLOSS_ContextSwitch(&temp->state, &Current->state);
         
 } /* dispatcher */
@@ -762,3 +782,40 @@ void checkKernelMode(char *nameOfFunc)
         USLOSS_Halt(1);
     }
 }
+
+
+
+//OLD WORKING CODE
+//    (1)Parent has already done a join(), OR
+//     if (Current->parent && Current->parent->status == JOIN){
+//     	if (DEBUG && debugflag) {
+//     		USLOSS_Console("quit(): parent: %s stat: %d.\n", Current->parent->name, Current->parent->status);
+//     	}
+//     	Current->parent->unjoinedChildrenProcPtr = Current;
+//     	
+//     	set parent to ready from JOIN
+//     	Current->parent->status = READY;
+//     	
+//     (2)Parent has not (yet) done a join()
+//     }else { 
+//     	add Current to Current->parent.unjoinedChildProcPtr list
+//     	if (Current->parent && Current->parent->unjoinedChildrenProcPtr == NULL){
+//     		if (DEBUG && debugflag) {
+//     			USLOSS_Console("quit(): Creating unjoinedChildren List with %s.\n", Current->name);
+//     		}
+//     		Current->parent->unjoinedChildrenProcPtr = Current;
+//     	}
+//     	else if (Current->parent){
+//     		procPtr temp = Current->parent->unjoinedChildrenProcPtr;
+//     		while (temp->unjoinedSiblingProcPtr != NULL){
+//     			temp = temp->unjoinedSiblingProcPtr;
+//     		}
+//     		if (DEBUG && debugflag) {
+//     			USLOSS_Console("quit(): Adding %s to END of unjoinedChildren List.\n", Current->name);
+//     		}
+//     		temp = Current;
+//     	}
+//     }
+
+
+
