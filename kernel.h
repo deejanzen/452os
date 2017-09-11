@@ -25,6 +25,7 @@ struct procStruct {
    procPtr		   unjoinedChildrenProcPtr;
    procPtr		   unjoinedSiblingProcPtr;
    int             zapStatus;     /* 1 if process is zapped, 0 otherwise */
+   int             numberOfChildren;
 };
 
 struct psrBits {
