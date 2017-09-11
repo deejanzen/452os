@@ -23,6 +23,9 @@ static void checkDeadlock();
 void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
+void dumpProcesses();
+int getpid();
+int zap(int pid);
 
 
 
@@ -82,6 +85,7 @@ void startup(int argc, char *argv[])
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
+        ProcTable[i].zapStatus = 0;
    		ProcTable[i].numberOfChildren = 0;
    		
 	}
@@ -134,6 +138,8 @@ void finish(int argc, char *argv[])
 {
     if (DEBUG && debugflag)
         USLOSS_Console("in finish...\n");
+
+    USLOSS_Console("All processes completed.\n");
 } /* finish */
 
 /* ------------------------------------------------------------------------
@@ -322,6 +328,10 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	}
     	dispatcher();
     }
+
+    psr = enableInterrupts();
+    if (DEBUG && debugflag)
+        USLOSS_Console("fork1(): enableInterrupts returned %d\n", psr);
 
     return procSlot;
 } /* fork1 */
@@ -638,6 +648,9 @@ void dispatcher(void)
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): starting\n");
     }
+
+    checkKernelMode();
+    disableInterrupts();
     
     checkKernelMode("dispatcher");
     
@@ -823,6 +836,34 @@ void checkKernelMode(char *nameOfFunc)
     }
 }
 
+void dumpProcesses()
+{
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\tNAME\n");
+    for (int i = 1; i <= MAXPROC; i++) {
+        int index = i % MAXPROC;
+        USLOSS_Console("%d:\t", i);
+        USLOSS_Console("%d\t", ProcTable[index].pid);
+        USLOSS_Console("%d\t", ProcTable[index].parent ? ProcTable[index].parent->pid : -1);
+        USLOSS_Console("%d\t", ProcTable[index].priority);
+        USLOSS_Console("%d\t", ProcTable[index].status);
+        USLOSS_Console("%s", ProcTable[index].name);
+        USLOSS_Console("\n");
+    }
+}
+
+int getpid() {
+    return Current->pid;
+}
+
+int zap(int pid) {
+    checkKernelMode();
+    disableInterrupts();
+
+    // check 
+
+    enableInterrupts();
+    return -1;
+}
 
 
 //OLD WORKING CODE
