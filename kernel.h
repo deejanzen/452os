@@ -26,7 +26,6 @@ struct procStruct {
    procPtr		   unjoinedSiblingProcPtr;
    int             numberOfChildren;
    int			   startTime;
-   int			   totalTime;
 };
 
 struct psrBits {

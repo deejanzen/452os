@@ -84,7 +84,6 @@ void startup(int argc, char *argv[])
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
    		ProcTable[i].numberOfChildren = 0;
    		ProcTable[i].startTime = 0;
-   		ProcTable[i].totalTime = 0;
    		
 	}
     
@@ -159,6 +158,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         
     // test if in kernel mode; halt if in user mode
 	checkKernelMode("fork1");
+	
+	//enable interrupts
+	//enableInterrupts();
 	
 	if(name == NULL || startFunc == NULL ){
 		if (DEBUG && debugflag)
@@ -326,6 +328,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	if (DEBUG && debugflag) {
     		USLOSS_Console("fork1(): Calling dispatcher() on: %s \n", ProcTable[procSlot].name);
     	}
+    	//disableInterrupts();
     	dispatcher();
     }
 
@@ -375,14 +378,14 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
-	//disable interupts
-    //disableInterrupts();
-	
 	if (DEBUG && debugflag)
         USLOSS_Console("join(): started\n");
 	
 	// test if in kernel mode; halt if in user mode
 	checkKernelMode("join");
+	
+	//disable interupts
+    //disableInterrupts();
 
     //join() function: There are three cases
     
@@ -482,14 +485,14 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {	
-	//disable interrupts
-	disableInterrupts();
-	
 	if (DEBUG && debugflag){
         USLOSS_Console("quit(): starting\n");
     }
 	// test if in kernel mode; halt if in user mode
 	checkKernelMode("quit");
+	
+	//disable interrupts
+	disableInterrupts();
 	
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
@@ -649,45 +652,45 @@ void quit(int status)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
-    disableInterrupts();
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): starting\n");
     }
     
     checkKernelMode("dispatcher");
     
+    disableInterrupts();
+    
     //initial call of USLOSS_ContextSwitch
     if(!Current){
     	Current = ReadyList;
     	
-    	USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
     	p1_switch(0, Current->pid);
     	//enable interrupts
     	
+    	//TODO make Current ptr be "running" status
     	Current->status = RUNNING;
+    	
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
     	}
+    	if (DEBUG && debugflag) 
+    		USLOSS_Console("USLOSS_DeviceInput(): setting %s's startTime)\n",Current->name);
+    	USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
-   	//be fair to continuing process'. Stash current - start to total
-   	//int currentTime = 0;
-   	//USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
-   	//Current->totalTime = currentTime - Current->startTime;
-   	//current->startTime = 
     procPtr nextProcess = NULL;
     procPtr temp = ReadyList;
     
     //determine next Process to run
-    if ((temp->priority <= Current->priority && temp->status != JOIN)|| 
-    	 temp->status != JOIN ){
+    if ((temp->priority <= Current->priority && temp->status != JOIN) || 
+    	 temp->status != JOIN){
     	nextProcess = temp;
 
     }
     else{
     	while (temp->nextProcPtr != NULL){
-    		if((temp->nextProcPtr->priority <= Current->priority && temp->status != JOIN)||
+    		if((temp->nextProcPtr->priority <= Current->priority && temp->status != JOIN )||
     		    temp->status != JOIN){
     			nextProcess = temp;
     			break;
@@ -715,24 +718,23 @@ void dispatcher(void)
     		nextProcess->name);
     }
     
+    // TODO let Current denote RUNNING
     if (Current->status == RUNNING)
-    	Current->status = READY;
-    if (nextProcess->status == READY)
-    	nextProcess->status = RUNNING;
+	Current->status = READY;
+	if (nextProcess->status == READY)
+	nextProcess->status = RUNNING;
     	
     temp = Current;
     Current = nextProcess;	
     
-    // time
-    // temp->totalTime = 
-    // temp->startTime
-	// USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
-    
     p1_switch(Current->pid, nextProcess->pid);
+    
+    // set current time
+    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
     
     //enable interrupts
     enableInterrupts();
-
+    
     USLOSS_ContextSwitch(&temp->state, &Current->state);
         
 } /* dispatcher */
@@ -905,10 +907,15 @@ int isZapped() {
 // thus, time slice is 80,000 μs
 void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line 64)*/
 	int timeUsed = readtime();
+	if (timeUsed == -7){
+	   USLOSS_Console("readtime(): ERROR\n");
+	   return;
+	}
 	if (DEBUG && debugflag)
     	USLOSS_Console("clockHandler(): readtime(): %d \n",timeUsed);
-	if (Current && timeUsed >= 80000){
-		Current->totalTime = timeUsed;
+	if (timeUsed > 80000){
+		//move to end of same  priority and call dispatch()
+		
 		dispatcher();
 	}
 }//end clockHandler
@@ -921,20 +928,19 @@ void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line
 //(4.1)The clock device has a 32-bit status register that is accessed via USLOSS_DeviceInput. 
 //	   This register contains the time (in microseconds) since USLOSS started running.
 int readtime(){
-	int currentTime = usedTime = 0;
+	int currentTime = -1;
 	
-	if (DEBUG && debugflag) {
-    	USLOSS_Console("USLOSS_DeviceInput(): called\n");
-    }
+	if (DEBUG && debugflag) 
+    	USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
+    
 	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) == USLOSS_DEV_OK){
 		if (DEBUG && debugflag)
     		USLOSS_Console("USLOSS_DeviceInput() returned USLOSS_DEV_OK: %d\n",USLOSS_DEV_OK);
+		
+		return currentTime - Current->startTime;
 	}
 	
-	if (Current){
-		timeUsed = Current->totalTime + (currentTime - Current->startTime);
-	}
-	return timeUsed;
+	return -7;
 }//end readtime
 
 
