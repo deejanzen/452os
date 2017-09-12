@@ -26,6 +26,7 @@ int disableInterrupts();
 void dumpProcesses();
 int getpid();
 int zap(int pid);
+int isZapped();
 
 
 
@@ -250,7 +251,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // More stuff to do here...
     
     //set status
-     ProcTable[procSlot].status = READY;
+    ProcTable[procSlot].status = READY;
      
     //set parent
     ProcTable[procSlot].parent = Current;
@@ -748,6 +749,8 @@ int sentinel (char *dummy)
 /* check to determine if deadlock has occurred... */
 static void checkDeadlock()
 {
+    checkKernelMode("checkDeadlock");
+
 	if (ReadyList->priority == 6){
 		if (DEBUG && debugflag){
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
@@ -832,7 +835,8 @@ void checkKernelMode(char *nameOfFunc)
 }
 
 void dumpProcesses()
-{
+{ 
+    checkKernelMode("dumpProcesses");
     USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
@@ -848,6 +852,7 @@ void dumpProcesses()
 }
 
 int getpid() {
+    checkKernelMode("getpid");
     return Current->pid;
 }
 
@@ -886,6 +891,7 @@ int zap(int pid) {
 }
 
 int isZapped() {
+    checkKernelMode("isZapped");
     return Current->zapStatus;
 }
 
