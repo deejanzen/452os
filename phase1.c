@@ -23,8 +23,8 @@ static void checkDeadlock();
 void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
-
-
+void clockHandler(int dev, void *arg); //See usloss.h line 64
+int readtime(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -83,6 +83,8 @@ void startup(int argc, char *argv[])
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
    		ProcTable[i].numberOfChildren = 0;
+   		ProcTable[i].startTime = 0;
+   		ProcTable[i].totalTime = 0;
    		
 	}
     
@@ -92,6 +94,7 @@ void startup(int argc, char *argv[])
     ReadyList = NULL;
 
     // Initialize the clock interrupt handler
+    //USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -158,15 +161,18 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 	checkKernelMode("fork1");
 	
 	if(name == NULL || startFunc == NULL ){
-		USLOSS_Console("fork1(): name is NULL\n");
+		if (DEBUG && debugflag)
+			USLOSS_Console("fork1(): name is NULL\n");
 		return -1; 
 	} 
 	if(startFunc == NULL){
-		USLOSS_Console("fork1(): startFunc is NULL\n");
+		if (DEBUG && debugflag)
+			USLOSS_Console("fork1(): startFunc is NULL\n");
 		return -1; 
 	}
 	if (priority < 1 || priority > 6){
-		USLOSS_Console("fork1(): priority %d is out-of-range\n", priority);
+		if (DEBUG && debugflag)
+			USLOSS_Console("fork1(): priority %d is out-of-range\n", priority);
 		return -1;
 	}
 	
@@ -185,8 +191,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     int i;
     for (i = 1; i <= MAXPROC; i++) {
         if (ProcTable[i % 50].pid == -1) {
-            procSlot = i;
-            ProcTable[i].pid = nextPid++;
+            procSlot = i % 50;
+            ProcTable[procSlot].pid = nextPid++;
             break;
         }
     }
@@ -323,7 +329,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	dispatcher();
     }
 
-    return procSlot;
+    return ProcTable[procSlot].pid;
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -437,28 +443,6 @@ int join(int *status)
     	}//end (3)No (unjoined) child has quit() ... must wait.
     }//end of else Current->childProcPtr != NULL
     
-	//remove child from Current->childProcPtr list
-//     if (Current->childProcPtr->pid == unjoinedPid){
-//     	if (DEBUG && debugflag) {
-//     		USLOSS_Console("join(): removing %s HEAD of childProcPtr list\n", Current->childProcPtr->name);
-//     	}
-//     	Current->childProcPtr = Current->childProcPtr->nextSiblingPtr;
-//     }
-//     else {
-//     	procPtr temp = Current->childProcPtr;
-//     	while(temp->nextSiblingPtr != NULL){
-//     		if (temp->nextSiblingPtr->pid == unjoinedPid){
-//     			if (DEBUG && debugflag) {
-//     				USLOSS_Console("join(): removing %s from childProcPtr list\n", Current->childProcPtr->name);
-//     			}
-//     			temp->nextSiblingPtr = temp->nextSiblingPtr->nextSiblingPtr;
-//     			break;
-//     		}
-//     		temp = temp->nextSiblingPtr;
-//     	}
-//     	
-//     }
-	
 	//update no of children after removal
 	Current->numberOfChildren -=1;
 		
@@ -676,6 +660,7 @@ void dispatcher(void)
     if(!Current){
     	Current = ReadyList;
     	
+    	USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
     	p1_switch(0, Current->pid);
     	//enable interrupts
     	
@@ -686,7 +671,11 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
-   
+   	//be fair to continuing process'. Stash current - start to total
+   	//int currentTime = 0;
+   	//USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
+   	//Current->totalTime = currentTime - Current->startTime;
+   	//current->startTime = 
     procPtr nextProcess = NULL;
     procPtr temp = ReadyList;
     
@@ -734,6 +723,11 @@ void dispatcher(void)
     temp = Current;
     Current = nextProcess;	
     
+    // time
+    // temp->totalTime = 
+    // temp->startTime
+	// USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
+    
     p1_switch(Current->pid, nextProcess->pid);
     
     //enable interrupts
@@ -771,32 +765,14 @@ int sentinel (char *dummy)
 /* check to determine if deadlock has occurred... */
 static void checkDeadlock()
 {
+	//TODO walk ReadyList and check for blocked process or join/waiting
 	if (ReadyList->priority == 6){
 		if (DEBUG && debugflag){
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
         	USLOSS_Console("sentinel(): calling halt(0).\n");
         }
-        //Cleanup the process table entry (but not entirely, see join()
-    	Current->nextProcPtr = NULL;       /*MOVED TO AFTER ReadyList remove*/
-    	Current->childProcPtr = NULL;
-		Current->nextSiblingPtr = NULL;
-    	Current->name[0] = '\0';
-		Current->startArg[0] = '\0';
-    	//state
-    	Current->pid = -1; 
-    	Current->priority = -1;
-   		Current->startFunc = NULL;
-   		free(Current->stack); //JOIN
-   		Current->stackSize = 0;	
-   		Current->stackSize = 0;
-    	Current->status = QUIT;
-		/* other fields as needed... */
-   		Current->quitStatus = 0;
-   		//Current->parent == NULL;
-   		Current->unjoinedChildrenProcPtr = NULL;
-		Current->unjoinedSiblingProcPtr = NULL;
-   		Current->numberOfChildren = 0;
         
+        USLOSS_Console("All processes completed.\n");
         ReadyList = NULL;
         USLOSS_Halt(0);
 	}else{
@@ -913,6 +889,68 @@ int zap(int pid) {
 int isZapped() {
     return Current->zapStatus;
 }
+
+// int USLOSS_DeviceInput(int dev, int unit, int *status);
+// kernel mode Sets *status to the contents of the device status register indicated by dev and unit. 
+// If dev and unit are both valid, USLOSS_DEV_OK is returned; otherwise, USLOSS_DEV_INVALID is returned.
+
+// Since there is only one clock device, the unit number is zero.
+// USLOSS_CLOCK_DEV "usloss.h" line 75
+
+// Interrupt vector is defined by USLOSS as an array of pointers to void functions with 2 integer arguments:
+//   extern void (*USLOSS_IntVec[NUM_INTS]) (int dev, int  unit); /* from usloss.h */
+// Checks if the current process has exceeded its time slice. Calls dispatcher() if necessary.
+// Time slice is 80 ms (milliseconds).
+// The USLOSS_DeviceInput(int dev, int unit, int *status) function returns time in microseconds (= 1,000 ms); 
+// thus, time slice is 80,000 μs
+void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line 64)*/
+	int timeUsed = readtime();
+	if (DEBUG && debugflag)
+    	USLOSS_Console("clockHandler(): readtime(): %d \n",timeUsed);
+	if (Current && timeUsed >= 80000){
+		Current->totalTime = timeUsed;
+		dispatcher();
+	}
+}//end clockHandler
+
+// Return the CPU time (in milliseconds) used by the current process. 
+// This means that the kernel must record the amount of processor time used by each process. 
+// Do not use the clock interrupt to measure CPU time as it is too coarse-grained; 
+// use USLOSS_DeviceInput to get the current time from the USLOSS clock (see Section 4.1 of the USLOSS manual).
+//
+//(4.1)The clock device has a 32-bit status register that is accessed via USLOSS_DeviceInput. 
+//	   This register contains the time (in microseconds) since USLOSS started running.
+int readtime(){
+	int currentTime = usedTime = 0;
+	
+	if (DEBUG && debugflag) {
+    	USLOSS_Console("USLOSS_DeviceInput(): called\n");
+    }
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) == USLOSS_DEV_OK){
+		if (DEBUG && debugflag)
+    		USLOSS_Console("USLOSS_DeviceInput() returned USLOSS_DEV_OK: %d\n",USLOSS_DEV_OK);
+	}
+	
+	if (Current){
+		timeUsed = Current->totalTime + (currentTime - Current->startTime);
+	}
+	return timeUsed;
+}//end readtime
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //OLD WORKING CODE
 //    (1)Parent has already done a join(), OR
