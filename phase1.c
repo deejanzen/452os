@@ -31,7 +31,7 @@ void timeSlice(void);
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -194,11 +194,14 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[i % 50].pid == -1) {
-            procSlot = i % 50;
+        if (DEBUG && debugflag) 
+            USLOSS_Console("fork1(): i: %d npid:%d mod 50 pid: %d\n",i,nextPid,ProcTable[nextPid % 50].pid);
+        if (ProcTable[nextPid % 50].pid == -1) {
+            procSlot = nextPid % 50;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
+        nextPid++;
     }
     if (i == MAXPROC + 1) {
         if (DEBUG && debugflag) {
@@ -206,7 +209,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         }
         return -1;
     }
-
+	if (DEBUG && debugflag) 
+            USLOSS_Console("fork1(): new pid: %d for procSlot: %d\n",ProcTable[procSlot].pid,procSlot);
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
@@ -284,6 +288,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     		temp->nextSiblingPtr = &ProcTable[procSlot];
     		Current->numberOfChildren +=1;
    	 	}
+   	 	
     }
     
     //New processes should be placed at the end of the list of processes with the same priority.		
@@ -573,7 +578,7 @@ void quit(int status)
     //Cleanup the process table entry (but not entirely, see join()
     //Current->nextProcPtr = NULL;       /*MOVED TO AFTER ReadyList remove*/
     //ProcTable[i].childProcPtr = NULL;
-	//ProcTable[i].nextSiblingPtr = NULL;
+	Current->nextSiblingPtr = NULL;
     //Current->name[0] = '\0'; JOIN
 	Current->startArg[0] = '\0';
     //state
@@ -589,7 +594,7 @@ void quit(int status)
    	//Current->parent == NULL;
    	//Current->unjoinedChildrenProcPtr = NULL;
 	//Current->unjoinedSiblingProcPtr = NULL;
-   	Current->numberOfChildren = 0;
+   	//Current->numberOfChildren = 0;
     
     //Unblock processes that zap’d this process
     
@@ -634,6 +639,7 @@ void quit(int status)
 	if (DEBUG && debugflag) {
     		USLOSS_Console("quit(): calling dispatcher().\n");
     }
+    
     //enable interrupts
     enableInterrupts();
      
