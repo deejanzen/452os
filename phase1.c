@@ -89,6 +89,7 @@ void startup(int argc, char *argv[])
    		ProcTable[i].parent = NULL;					/*a process' parent ptr */
    		ProcTable[i].unjoinedChildrenProcPtr = NULL; 	/*procPtr of quit children pre-join */
    		ProcTable[i].unjoinedSiblingProcPtr = NULL;
+   		ProcTable[i].zapStatus = 0;
    		ProcTable[i].numberOfChildren = 0;
    		ProcTable[i].startTime = 0;
    		
@@ -942,44 +943,52 @@ int getpid() {
     return Current->pid;
 }
 
-// int zap(int pid) {
-//     checkKernelMode("zap");
-//     disableInterrupts();
-// 
-//     if (Current == &ProcTable[pid]) {
-//         USLOSS_Console("Process tried to zap itself\n");
-//         USLOSS_Halt(1);
-//     }
-// 
-//     if (ProcTable[pid].pid == -1) {
-//         USLOSS_Console("Tried to zap a nonexistent process");
-//         USLOSS_Halt(1);
-//     }
-// 
-//     ProcTable[pid].zapStatus = 1; // mark process as zapped
-// 
-//     while (1) {
-//         // Current process was zapped wile in zap
-//         if (isZapped()) {
-//             return -1;
-//         }
-//         // block until process quits
-//         if (ProcTable[pid].quitStatus == QUIT) {
-//             if (DEBUG && debugflag) {
-//                 USLOSS_Console("zap(): zapped process quit\n");
-//             }
-//             break;
-//         }
-//     }
-// 
-//     enableInterrupts();
-//     return 0;
-// }
-// 
-// 
-// int isZapped() {
-//     return Current->zapStatus;
-// }
+int zap(int pid) {
+    checkKernelMode("zap");
+    disableInterrupts();
+
+    if (Current == &ProcTable[pid]) {
+        USLOSS_Console("Process tried to zap itself\n");
+        USLOSS_Halt(1);
+    }
+
+    if (ProcTable[pid].pid == -1) {
+        USLOSS_Console("Tried to zap a nonexistent process");
+        USLOSS_Halt(1);
+    }
+
+    ProcTable[pid].zapStatus = 1; // mark process as zapped
+    ProcTable[pid].status = ZAPBLOCK;
+
+    // Current process was zapped wile in zap
+    if (isZapped()) {
+        return -1;
+    }
+
+    enableInterrupts();
+    return 0;
+}
+
+int isZapped() {
+    checkKernelMode("isZapped");
+    return Current->zapStatus;
+}
+
+int blockMe(int newStatus) {
+    checkKernelMode("blockMe");
+
+    if (newStatus <= 10) {
+        USLOSS_Console("blockMe(): newStatus not greater than 10\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (isZapped()) return -1;
+
+    Current->status = newStatus;
+
+    return 0;
+}
 
 // int USLOSS_DeviceInput(int dev, int unit, int *status);
 // kernel mode Sets *status to the contents of the device status register indicated by dev and unit. 
@@ -1049,122 +1058,3 @@ void timeSlice(void){
 	}
 	if ( readtime() > 80000 ) dispatcher();
 }//end timeSlice
-
-
-
-
-
-
-
-
-
-
-
-
-    ProcTable[pid].zapStatus = 1; // mark process as zapped
-    ProcTable[pid].status = ZAPBLOCK;
-
-    // Current process was zapped wile in zap
-    if (isZapped()) {
-        return -1;
-    }
-
-
-int isZapped() {
-    checkKernelMode("isZapped");
-    return Current->zapStatus;
-}
-
-int blockMe(int newStatus) {
-    checkKernelMode("blockMe");
-
-    if (newStatus <= 10) {
-        USLOSS_Console("blockMe(): newStatus not greater than 10\n");
-        USLOSS_Console("halting...\n");
-        USLOSS_Halt(1);
-    }
-    
-    if (isZapped()) return -1;
-
-    Current->status = newStatus;
-
-    return 0;
-}
-
-void clockHandler(int dev, void *arg) {
-
-}
-
-//OLD WORKING CODE
-//    (1)Parent has already done a join(), OR
-//     if (Current->parent && Current->parent->status == JOIN){
-//     	if (DEBUG && debugflag) {
-//     		USLOSS_Console("quit(): parent: %s stat: %d.\n", Current->parent->name, Current->parent->status);
-//     	}
-//     	Current->parent->unjoinedChildrenProcPtr = Current;
-//     	
-//     	set parent to ready from JOIN
-//     	Current->parent->status = READY;
-//     	
-//     (2)Parent has not (yet) done a join()
-//     }else { 
-//     	add Current to Current->parent.unjoinedChildProcPtr list
-//     	if (Current->parent && Current->parent->unjoinedChildrenProcPtr == NULL){
-//     		if (DEBUG && debugflag) {
-//     			USLOSS_Console("quit(): Creating unjoinedChildren List with %s.\n", Current->name);
-//     		}
-//     		Current->parent->unjoinedChildrenProcPtr = Current;
-//     	}
-//     	else if (Current->parent){
-//     		procPtr temp = Current->parent->unjoinedChildrenProcPtr;
-//     		while (temp->unjoinedSiblingProcPtr != NULL){
-//     			temp = temp->unjoinedSiblingProcPtr;
-//     		}
-//     		if (DEBUG && debugflag) {
-//     			USLOSS_Console("quit(): Adding %s to END of unjoinedChildren List.\n", Current->name);
-//     		}
-//     		temp = Current;
-//     	}
-//     }
-
-// if (Current->unjoinedChildrenProcPtr != NULL ){
-//     	//(2)Child(ren) quit() before the join() occurred
-//     	//	(a)Return the pid and quit status of one quit child 
-//     	//	   and finish the clean up of that child’s process table entry.
-//     	//	(b)Report on quit children in the order the children quit().
-//     	//if (Current->unjoinedQuitChildren != NULL && Current->status != JOIN){
-//     	//*status = Current->unjoinedChildrenProcPtr->quitStatus;
-//     	//int unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
-//     	
-//     	//cleanup ProcStruct
-//     	//procPtr cleanup = Current->unjoinedQuitChildren;
-//     	//Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
-//     	
-//     	//return unjoinedPid;
-//     	}
-//     	//(3)No (unjoined) child has quit() ... must wait.
-//    		//	(a)how? After wait is over: return the pid and 
-//    		//			quit status of the child that quit.
-//    		//	(b)Where does the parent find these?
-//     	else { /*(Current->unjoinedChildrenProcPtr == NULL)*/
-//     		//WAIT: set status to JOIN and call dispatcher()
-//     		if (DEBUG && debugflag) {
-//     			USLOSS_Console("join(): %s wil JOIN. stat: %d.\n", Current->name,
-//     															   Current->status);
-//     		}
-//     		
-//     		Current->status = JOIN;
-//     		
-//     		if (DEBUG && debugflag) {
-//     			USLOSS_Console("join(): calling dispatcher()\n");
-//     		}
-//     		dispatcher();
-//     		
-//     		if (DEBUG && debugflag) {
-//     			USLOSS_Console("join(): continuing after JOIN\n");
-//     		}
-//     	}//end (3)No (unjoined) child has quit() ... must wait.
-//     }//end of else Current->childProcPtr != NULL
-
-
-
