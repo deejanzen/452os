@@ -27,6 +27,7 @@ void dumpProcesses();
 int getpid();
 int zap(int pid);
 int isZapped();
+int blockMe(int newStatus);
 
 
 
@@ -885,6 +886,22 @@ int zap(int pid) {
 int isZapped() {
     checkKernelMode("isZapped");
     return Current->zapStatus;
+}
+
+int blockMe(int newStatus) {
+    checkKernelMode("blockMe");
+
+    if (newStatus <= 10) {
+        USLOSS_Console("blockMe(): newStatus not greater than 10\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (isZapped()) return -1;
+
+    Current->status = newStatus;
+
+    return 0;
 }
 
 //OLD WORKING CODE
