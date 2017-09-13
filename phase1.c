@@ -869,7 +869,7 @@ int zap(int pid) {
     }
 
     if (ProcTable[pid].pid == -1) {
-        USLOSS_Console("Tried to zap a nonexistent process");
+        USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
