@@ -871,19 +871,11 @@ int zap(int pid) {
     }
 
     ProcTable[pid].zapStatus = 1; // mark process as zapped
+    ProcTable[pid].status = ZAPBLOCK;
 
-    while (1) {
-        // Current process was zapped wile in zap
-        if (isZapped()) {
-            return -1;
-        }
-        // block until process quits
-        if (ProcTable[pid].quitStatus == QUIT) {
-            if (DEBUG && debugflag) {
-                USLOSS_Console("zap(): zapped process quit\n");
-            }
-            break;
-        }
+    // Current process was zapped wile in zap
+    if (isZapped()) {
+        return -1;
     }
 
     enableInterrupts();
