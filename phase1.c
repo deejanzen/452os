@@ -24,6 +24,7 @@ void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
 void clockHandler(int dev, void *arg); //See usloss.h line 64
+void instructionHandler(int dev, void *arg);
 int readtime(void);
 int readCurStartTime(void);
 void timeSlice(void);
@@ -102,6 +103,7 @@ void startup(int argc, char *argv[])
 
     // Initialize the clock interrupt handler
     USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
+    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = instructionHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -914,8 +916,8 @@ void checkKernelMode(char *nameOfFunc)
         USLOSS_Console("%s(): psr is %d\n", nameOfFunc, cur_mode);
 
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("%s(): current mode not kernel\n", nameOfFunc);
-        USLOSS_Console("halting...\n");
+        USLOSS_Console("%s(): called while in user mode, by process %d. ", nameOfFunc, Current->pid);
+        USLOSS_Console("Halting...\n");
         USLOSS_Halt(1);
     }
 }
@@ -1058,3 +1060,7 @@ void timeSlice(void){
 	}
 	if ( readtime() > 80000 ) dispatcher();
 }//end timeSlice
+
+void instructionHandler(int dev, void *arg) {
+
+}
