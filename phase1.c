@@ -28,6 +28,7 @@ int getpid();
 int zap(int pid);
 int isZapped();
 int blockMe(int newStatus);
+void clockHandler(int dev, void *arg);
 
 
 
@@ -98,6 +99,7 @@ void startup(int argc, char *argv[])
     ReadyList = NULL;
 
     // Initialize the clock interrupt handler
+    USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -902,6 +904,10 @@ int blockMe(int newStatus) {
     Current->status = newStatus;
 
     return 0;
+}
+
+void clockHandler(int dev, void *arg) {
+
 }
 
 //OLD WORKING CODE
