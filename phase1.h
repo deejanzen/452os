@@ -41,6 +41,7 @@
 #define BLOCKED      2 
 #define JOIN         3
 #define QUIT         4
+#define ZAPBLOCK     5
 
 /* 
  * Function prototypes for this phase.

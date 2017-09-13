@@ -27,6 +27,11 @@ void clockHandler(int dev, void *arg); //See usloss.h line 64
 int readtime(void);
 int readCurStartTime(void);
 void timeSlice(void);
+void dumpProcesses();
+int getpid();
+int zap(int pid);
+int isZapped();
+int blockMe(int newStatus);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -256,7 +261,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // More stuff to do here...
     
     //set status
-     ProcTable[procSlot].status = READY;
+    ProcTable[procSlot].status = READY;
      
     //set parent
     ProcTable[procSlot].parent = Current;
@@ -848,6 +853,8 @@ int sentinel (char *dummy)
 static void checkDeadlock()
 {
 	//TODO walk ReadyList and check for blocked process or join/waiting
+    checkKernelMode("checkDeadlock");
+	
 	if (ReadyList->priority == 6){
 		if (DEBUG && debugflag){
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
@@ -914,7 +921,8 @@ void checkKernelMode(char *nameOfFunc)
 
 
 void dumpProcesses()
-{
+{ 
+    checkKernelMode("dumpProcesses");
     USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
@@ -930,6 +938,7 @@ void dumpProcesses()
 }
 
 int getpid() {
+    checkKernelMode("getpid");
     return Current->pid;
 }
 
@@ -1052,9 +1061,39 @@ void timeSlice(void){
 
 
 
+    ProcTable[pid].zapStatus = 1; // mark process as zapped
+    ProcTable[pid].status = ZAPBLOCK;
+
+    // Current process was zapped wile in zap
+    if (isZapped()) {
+        return -1;
+    }
 
 
+int isZapped() {
+    checkKernelMode("isZapped");
+    return Current->zapStatus;
+}
 
+int blockMe(int newStatus) {
+    checkKernelMode("blockMe");
+
+    if (newStatus <= 10) {
+        USLOSS_Console("blockMe(): newStatus not greater than 10\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (isZapped()) return -1;
+
+    Current->status = newStatus;
+
+    return 0;
+}
+
+void clockHandler(int dev, void *arg) {
+
+}
 
 //OLD WORKING CODE
 //    (1)Parent has already done a join(), OR
