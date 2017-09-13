@@ -25,6 +25,8 @@ int enableInterrupts();
 int disableInterrupts();
 void clockHandler(int dev, void *arg); //See usloss.h line 64
 int readtime(void);
+int readCurStartTime(void);
+void timeSlice(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -93,7 +95,7 @@ void startup(int argc, char *argv[])
     ReadyList = NULL;
 
     // Initialize the clock interrupt handler
-    //USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
+    USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -629,12 +631,12 @@ void quit(int status)
     
     p1_quit(Current->pid);
 
+	if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): calling dispatcher().\n");
+    }
     //enable interrupts
     enableInterrupts();
      
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): calling dispatcher().\n");
-    }
     dispatcher();
     
 } /* quit */
@@ -665,22 +667,88 @@ void dispatcher(void)
     	Current = ReadyList;
     	
     	p1_switch(0, Current->pid);
-    	//enable interrupts
     	
     	//TODO make Current ptr be "running" status
     	Current->status = RUNNING;
     	
+    	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
+    		if (DEBUG && debugflag) 
+    			USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
+    							Current->name,
+    							Current->startTime);
+    	}
+    	
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
     	}
-    	if (DEBUG && debugflag) 
-    		USLOSS_Console("USLOSS_DeviceInput(): setting %s's startTime)\n",Current->name);
-    	USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
+    	
+    	//enable interrupts or does launch() do this?
+    	//enableInterrupts();
+    	
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
+    procPtr temp;
+    int rt = readtime();
+    //if (DEBUG && debugflag) 
+	//	USLOSS_Console("dispatcher(): %s's readtime: %d\n", Current->name, rt);
+    if (rt > 80000){
+    	if (DEBUG && debugflag) 
+    			USLOSS_Console("dispatcher(): readtime(): %dμs > 80000 μs. Pulling Current off ReadyList\n", rt);
+    	//Current to end of its priority
+    	if(Current->pid == ReadyList->pid){
+    		ReadyList = Current->nextProcPtr;
+    	}else{
+    		//walk downlist looking for prior
+    		procPtr prior = ReadyList;
+    		while (prior->nextProcPtr != NULL){
+    			if (prior->nextProcPtr->pid == Current->pid) break;
+    			prior = prior->nextProcPtr;
+    		}
+    		prior->nextProcPtr = Current->nextProcPtr;
+    	}
+    	
+    if (DEBUG && debugflag) 
+    	USLOSS_Console("dispatcher(): putting Current at end of its priority\n", rt);
+    //add Current to end of its priority list on the ReadyList
+    if (ReadyList == NULL){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): ReadyList is %s\n", Current->name);
+    	}
+    	ReadyList = Current;
+    }else if (Current->priority < ReadyList->priority ){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): ReadyList HEAD: %s\n", Current->name);
+    	}
+    	Current->nextProcPtr = ReadyList;
+    	ReadyList = Current;
+    }else {
+    	temp = ReadyList;
+    	while(temp->nextProcPtr != NULL){
+			if (Current->priority < temp->nextProcPtr->priority){
+				if (DEBUG && debugflag) {
+					USLOSS_Console("dispatcher(): Adding %s pri: %d to ReadyList ahead of %s pri: %d\n", 
+								   Current->name,
+								   Current->priority,
+								   temp->nextProcPtr->name,
+								   temp->nextProcPtr->priority);
+				
+				}
+				Current->nextProcPtr = temp->nextProcPtr;
+				temp->nextProcPtr = Current;
+				break;
+			}
+			temp = temp->nextProcPtr;
+    	}
+    	//end of list
+    }
+    }//end rt > 80000
+    
+    
+    
+    
     procPtr nextProcess = NULL;
-    procPtr temp = ReadyList;
+    temp = ReadyList;
     
     //determine next Process to run
     if ((temp->priority <= Current->priority && temp->status != JOIN) || 
@@ -712,11 +780,7 @@ void dispatcher(void)
     	return;
     }
     
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
-    		Current->name,
-    		nextProcess->name);
-    }
+    
     
     // TODO let Current denote RUNNING
     if (Current->status == RUNNING)
@@ -724,16 +788,27 @@ void dispatcher(void)
 	if (nextProcess->status == READY)
 	nextProcess->status = RUNNING;
     	
+    //update Current to new process
     temp = Current;
     Current = nextProcess;	
     
-    p1_switch(Current->pid, nextProcess->pid);
+    p1_switch(temp->pid, Current->pid);
     
     // set current time
-    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime);
+    if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
+    	if (DEBUG && debugflag) 
+    		USLOSS_Console("dispatcher(): updating %s's startTime: %d μs\n",
+    					    Current->name,
+    						Current->startTime);
+    }
     
-    //enable interrupts
-    enableInterrupts();
+    if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
+    						temp->name,
+    						Current->name);
+    }
+    //enable interrupts or does launch() do this?
+    //enableInterrupts();
     
     USLOSS_ContextSwitch(&temp->state, &Current->state);
         
@@ -761,6 +836,7 @@ int sentinel (char *dummy)
         checkDeadlock();
         USLOSS_WaitInt();
     }
+    return -100;
 } /* sentinel */
 
 
@@ -853,44 +929,44 @@ int getpid() {
     return Current->pid;
 }
 
-int zap(int pid) {
-    checkKernelMode("zap");
-    disableInterrupts();
-
-    if (Current == &ProcTable[pid]) {
-        USLOSS_Console("Process tried to zap itself\n");
-        USLOSS_Halt(1);
-    }
-
-    if (ProcTable[pid].pid == -1) {
-        USLOSS_Console("Tried to zap a nonexistent process");
-        USLOSS_Halt(1);
-    }
-
-    ProcTable[pid].zapStatus = 1; // mark process as zapped
-
-    while (1) {
-        // Current process was zapped wile in zap
-        if (isZapped()) {
-            return -1;
-        }
-        // block until process quits
-        if (ProcTable[pid].quitStatus == QUIT) {
-            if (DEBUG && debugflag) {
-                USLOSS_Console("zap(): zapped process quit\n");
-            }
-            break;
-        }
-    }
-
-    enableInterrupts();
-    return 0;
-}
-
-
-int isZapped() {
-    return Current->zapStatus;
-}
+// int zap(int pid) {
+//     checkKernelMode("zap");
+//     disableInterrupts();
+// 
+//     if (Current == &ProcTable[pid]) {
+//         USLOSS_Console("Process tried to zap itself\n");
+//         USLOSS_Halt(1);
+//     }
+// 
+//     if (ProcTable[pid].pid == -1) {
+//         USLOSS_Console("Tried to zap a nonexistent process");
+//         USLOSS_Halt(1);
+//     }
+// 
+//     ProcTable[pid].zapStatus = 1; // mark process as zapped
+// 
+//     while (1) {
+//         // Current process was zapped wile in zap
+//         if (isZapped()) {
+//             return -1;
+//         }
+//         // block until process quits
+//         if (ProcTable[pid].quitStatus == QUIT) {
+//             if (DEBUG && debugflag) {
+//                 USLOSS_Console("zap(): zapped process quit\n");
+//             }
+//             break;
+//         }
+//     }
+// 
+//     enableInterrupts();
+//     return 0;
+// }
+// 
+// 
+// int isZapped() {
+//     return Current->zapStatus;
+// }
 
 // int USLOSS_DeviceInput(int dev, int unit, int *status);
 // kernel mode Sets *status to the contents of the device status register indicated by dev and unit. 
@@ -914,8 +990,6 @@ void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line
 	if (DEBUG && debugflag)
     	USLOSS_Console("clockHandler(): readtime(): %d \n",timeUsed);
 	if (timeUsed > 80000){
-		//move to end of same  priority and call dispatch()
-		
 		dispatcher();
 	}
 }//end clockHandler
@@ -930,18 +1004,38 @@ void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line
 int readtime(){
 	int currentTime = -1;
 	
-	if (DEBUG && debugflag) 
-    	USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
+	// if (DEBUG && debugflag) 
+	// USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
     
 	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) == USLOSS_DEV_OK){
-		if (DEBUG && debugflag)
-    		USLOSS_Console("USLOSS_DeviceInput() returned USLOSS_DEV_OK: %d\n",USLOSS_DEV_OK);
+		// if (DEBUG && debugflag)
+//     		USLOSS_Console("USLOSS_DeviceInput() currentTime: %d startTime: %d\n",
+//     						currentTime, 
+//     						Current->startTime);
 		
 		return currentTime - Current->startTime;
 	}
 	
 	return -7;
 }//end readtime
+
+// This operation returns the time (in microseconds) at which the currently
+// executing process began its current time slice.
+int readCurStartTime(void){
+	return Current->startTime;
+}//end readCurStartTime
+
+// This operation calls the dispatcher if the currently executing process has exceeded
+// its time slice; otherwise, it simply returns.
+void timeSlice(void){
+	int currentTime;
+	
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
+		if (DEBUG && debugflag)
+    		USLOSS_Console("USLOSS_DeviceInput() != USLOSS_DEV_OK \n");
+	}
+	if ( readtime() > 80000 ) dispatcher();
+}//end timeSlice
 
 
 
