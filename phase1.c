@@ -194,8 +194,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (DEBUG && debugflag) 
-            USLOSS_Console("fork1(): i: %d npid:%d mod 50 pid: %d\n",i,nextPid,ProcTable[nextPid % 50].pid);
         if (ProcTable[nextPid % 50].pid == -1) {
             procSlot = nextPid % 50;
             ProcTable[procSlot].pid = nextPid++;
