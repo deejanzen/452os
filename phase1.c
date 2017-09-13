@@ -27,6 +27,8 @@ void dumpProcesses();
 int getpid();
 int zap(int pid);
 int isZapped();
+int blockMe(int newStatus);
+void clockHandler(int dev, void *arg);
 
 
 
@@ -97,6 +99,7 @@ void startup(int argc, char *argv[])
     ReadyList = NULL;
 
     // Initialize the clock interrupt handler
+    USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -871,19 +874,11 @@ int zap(int pid) {
     }
 
     ProcTable[pid].zapStatus = 1; // mark process as zapped
+    ProcTable[pid].status = ZAPBLOCK;
 
-    while (1) {
-        // Current process was zapped wile in zap
-        if (isZapped()) {
-            return -1;
-        }
-        // block until process quits
-        if (ProcTable[pid].quitStatus == QUIT) {
-            if (DEBUG && debugflag) {
-                USLOSS_Console("zap(): zapped process quit\n");
-            }
-            break;
-        }
+    // Current process was zapped wile in zap
+    if (isZapped()) {
+        return -1;
     }
 
     enableInterrupts();
@@ -893,6 +888,26 @@ int zap(int pid) {
 int isZapped() {
     checkKernelMode("isZapped");
     return Current->zapStatus;
+}
+
+int blockMe(int newStatus) {
+    checkKernelMode("blockMe");
+
+    if (newStatus <= 10) {
+        USLOSS_Console("blockMe(): newStatus not greater than 10\n");
+        USLOSS_Console("halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (isZapped()) return -1;
+
+    Current->status = newStatus;
+
+    return 0;
+}
+
+void clockHandler(int dev, void *arg) {
+
 }
 
 //OLD WORKING CODE
