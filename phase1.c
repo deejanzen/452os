@@ -699,11 +699,6 @@ void dispatcher(void)
     if(!Current){
     	Current = ReadyList;
     	
-    	p1_switch(0, Current->pid);
-    	
-    	// Current is about to launch()
-    	Current->status = RUNNING;
-    	
     	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
     		if (DEBUG && debugflag) 
     			USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
@@ -715,8 +710,13 @@ void dispatcher(void)
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
     	}
     	
+    	// Current is about to launch()
+    	Current->status = RUNNING;
+    	
+    	p1_switch(0, Current->pid);
+    	
     	//enable interrupts or does launch() do this?
-    	//enableInterrupts();
+    	enableInterrupts();
     	
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
@@ -833,8 +833,12 @@ void dispatcher(void)
     temp = Current;
     Current = nextProcess;	
     
-    p1_switch(temp->pid, Current->pid);
-    
+    if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
+    						temp->name,
+    						Current->name);
+    }
+     
     // set current time
     if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
     	if (DEBUG && debugflag) 
@@ -842,14 +846,11 @@ void dispatcher(void)
     					    Current->name,
     						Current->startTime);
     }
-    
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
-    						temp->name,
-    						Current->name);
-    }
+        
+    p1_switch(temp->pid, Current->pid);
+
     //enable interrupts or does launch() do this?
-    //enableInterrupts();
+    enableInterrupts();
     
     USLOSS_ContextSwitch(&temp->state, &Current->state);
         
