@@ -24,6 +24,7 @@ void checkKernelMode();
 int enableInterrupts();
 int disableInterrupts();
 void clockHandler(int dev, void *arg); //See usloss.h line 64
+void instructionHandler(int dev, void *arg);
 int readtime(void);
 int readCurStartTime(void);
 void timeSlice(void);
@@ -104,6 +105,7 @@ void startup(int argc, char *argv[])
 
     // Initialize the clock interrupt handler
     USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
+    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = instructionHandler;
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -946,8 +948,8 @@ void checkKernelMode(char *nameOfFunc)
         USLOSS_Console("%s(): psr is %d\n", nameOfFunc, cur_mode);
 
     if ((cur_mode & USLOSS_PSR_CURRENT_MODE) == 0) {
-        USLOSS_Console("%s(): current mode not kernel\n", nameOfFunc);
-        USLOSS_Console("halting...\n");
+        USLOSS_Console("%s(): called while in user mode, by process %d. ", nameOfFunc, Current->pid);
+        USLOSS_Console("Halting...\n");
         USLOSS_Halt(1);
     }
 }
@@ -979,23 +981,45 @@ int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
 
+    if (DEBUG && debugflag)
+        USLOSS_Console("Checking if process tried to zap itself\n");
+
     if (Current == &ProcTable[pid]) {
         USLOSS_Console("Process tried to zap itself\n");
         USLOSS_Halt(1);
     }
 
+    if (DEBUG && debugflag)
+        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+
     if (ProcTable[pid].pid == -1) {
-        USLOSS_Console("Tried to zap a nonexistent process");
+        USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
     ProcTable[pid].zapStatus = 1; // mark process as zapped
-    ProcTable[pid].status = ZAPBLOCK;
+    Current->status = ZAPBLOCK;
+
+    // add ProcTable[pid] to end of Current->zappingList
+    procPtr ref = Current->zappingList;
+    if (ref == NULL) { // no current processes zapped
+        Current->zappingList = &ProcTable[pid];
+    }
+    else {
+        while (ref->nextZapping != NULL) { // walk down zapping list to the end
+            ref = ref->nextZapping;
+        }
+        // add ProcTable[pid] to end of list
+        ref->nextZapping = &ProcTable[pid];
+        ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
+    }
 
     // Current process was zapped wile in zap
     if (isZapped()) {
         return -1;
     }
+
+    dispatcher();
 
     enableInterrupts();
     return 0;
@@ -1090,3 +1114,7 @@ void timeSlice(void){
 	}
 	if ( readtime() > 80000 ) dispatcher();
 }//end timeSlice
+
+void instructionHandler(int dev, void *arg) {
+
+}
