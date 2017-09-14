@@ -960,12 +960,14 @@ int zap(int pid) {
     }
 
     ProcTable[pid].zapStatus = 1; // mark process as zapped
-    ProcTable[pid].status = ZAPBLOCK;
+    Current->status = ZAPBLOCK;
 
     // Current process was zapped wile in zap
     if (isZapped()) {
         return -1;
     }
+
+    dispatcher();
 
     enableInterrupts();
     return 0;
