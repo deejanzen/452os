@@ -1001,16 +1001,16 @@ int zap(int pid) {
     Current->status = ZAPBLOCK;
 
     // add ProcTable[pid] to end of Current->zappingList
-    procPtr ref = Current->zappingList;
+    procPtr ref = ProcTable[pid].zappingList;
     if (ref == NULL) { // no current processes zapped
-        Current->zappingList = &ProcTable[pid];
+        Proctable[pid].zappingList = Current;
     }
     else {
         while (ref->nextZapping != NULL) { // walk down zapping list to the end
             ref = ref->nextZapping;
         }
         // add ProcTable[pid] to end of list
-        ref->nextZapping = &ProcTable[pid];
+        ref->nextZapping = Current;
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
