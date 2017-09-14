@@ -27,6 +27,9 @@ struct procStruct {
    int             zapStatus;     /* 1 if process is zapped, 0 otherwise */
    int             numberOfChildren;
    int			   startTime;
+   procPtr		   zappingList;
+   procPtr 		   nextZapping;
+   int 			   wasJoinZapped;
 };
 
 struct psrBits {
