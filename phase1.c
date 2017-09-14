@@ -92,7 +92,9 @@ void startup(int argc, char *argv[])
    		ProcTable[i].zapStatus = 0;
    		ProcTable[i].numberOfChildren = 0;
    		ProcTable[i].startTime = 0;
-   		
+   		ProcTable[i].zappingList = NULL;
+   		ProcTable[i].nextZapping = NULL;
+   		ProcTable[i].wasJoinZapped = 0;
 	}
     
     // Initialize the Ready list, etc.
@@ -396,7 +398,7 @@ int join(int *status)
 	checkKernelMode("join");
 	
 	//disable interupts
-    //disableInterrupts();
+    disableInterrupts();
 
     //join() function: There are three cases
     
@@ -441,12 +443,12 @@ int join(int *status)
     		}
     		
     		//reenable interupts
-    		//enableInterrupts();
+    		enableInterrupts();
     		
     		dispatcher();
     		
     		//disable interrupts
-    		//disableInterrupts();
+    		disableInterrupts();
     		
     		if (DEBUG && debugflag) {
     			USLOSS_Console("join(): continuing after JOIN\n");
@@ -476,10 +478,14 @@ int join(int *status)
 	Current->unjoinedChildrenProcPtr = Current->unjoinedChildrenProcPtr->unjoinedSiblingProcPtr;
 	
 	//reenable interupts
-    //enableInterrupts();
+    enableInterrupts();
     
     //the process was zapped while waiting for a child to quit RETURN -1
-    if(0 /*isZapped()*/) return -1;  // -1 is not correct! Here to prevent warning.
+    //add another field that int wasJoinZapped = 0; that zap sets to 1 if JOIN while
+    if(Current->wasJoinZapped){
+    	 Current->wasJoinZapped = 0;
+    	 return -1;  // -1 is not correct! Here to prevent warning. or is it?
+    }
 	
 	return unjoinedPid;
 } /* join */
@@ -508,9 +514,9 @@ void quit(int status)
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
 	if (Current->childProcPtr != NULL){
-    	if (DEBUG && debugflag){
-    		USLOSS_Console("Process %d has children! Halting.\n", Current->pid);
-    	}
+    	USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", 
+    					Current->pid,
+    					Current->name);
     	USLOSS_Halt(1);
     }
     
@@ -576,6 +582,23 @@ void quit(int status)
     	
     }
     
+    //clear zappingList
+    if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): cleaning up process table.\n", Current->name);
+    }
+    
+    while(Current->zappingList != NULL){
+    	if (Current->zappingList->status == ZAPBLOCK){
+    		Current->zappingList->status = READY;
+    		if (DEBUG && debugflag) {
+    			USLOSS_Console("quit(): ZAPBLOCK %s stat: %d.\n", 
+    						Current->zappingList->name,
+    						Current->zappingList->status);
+    		}
+    	}
+    	Current->zappingList = Current->zappingList->nextZapping;
+    }
+    	
     if (DEBUG && debugflag) {
     		USLOSS_Console("quit(): cleaning up process table.\n", Current->name);
     }
@@ -678,7 +701,7 @@ void dispatcher(void)
     	
     	p1_switch(0, Current->pid);
     	
-    	//TODO make Current ptr be "running" status
+    	// Current is about to launch()
     	Current->status = RUNNING;
     	
     	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
@@ -698,13 +721,19 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
+    //set Current to Ready
+    if (Current->status == RUNNING)
+		Current->status = READY;
+	
     procPtr temp;
     int rt = readtime();
     //if (DEBUG && debugflag) 
 	//	USLOSS_Console("dispatcher(): %s's readtime: %d\n", Current->name, rt);
     if (rt > 80000){
     	if (DEBUG && debugflag) 
-    			USLOSS_Console("dispatcher(): readtime(): %dμs > 80000 μs. Pulling Current off ReadyList\n", rt);
+    			USLOSS_Console("dispatcher(): readtime(): %d μs > 80000 μs. Pulling Current: %s off ReadyList\n", 
+    							rt,
+    							Current->name);
     	//Current to end of its priority
     	if(Current->pid == ReadyList->pid){
     		ReadyList = Current->nextProcPtr;
@@ -761,16 +790,16 @@ void dispatcher(void)
     temp = ReadyList;
     
     //determine next Process to run
-    if ((temp->priority <= Current->priority && temp->status != JOIN) || 
-    	 temp->status != JOIN){
+    if ((temp->priority <= Current->priority && temp->status == READY) || 
+    	 temp->status == READY){
     	nextProcess = temp;
 
     }
     else{
     	while (temp->nextProcPtr != NULL){
-    		if((temp->nextProcPtr->priority <= Current->priority && temp->status != JOIN )||
-    		    temp->status != JOIN){
-    			nextProcess = temp;
+    		if((temp->nextProcPtr->priority <= Current->priority && temp->nextProcPtr->status == READY )||
+    		    temp->nextProcPtr->status == READY){
+    			nextProcess = temp->nextProcPtr;
     			break;
     		}
    			temp = temp->nextProcPtr;
@@ -782,19 +811,21 @@ void dispatcher(void)
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): nextProcess NULL. returning to %s.\n", Current->name);
     	} 
+    	Current->status = RUNNING;
+    	enableInterrupts();
     	return;
     }else if (nextProcess->pid == Current->pid){
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): nextProcess == Current. returning to %s.\n", Current->name);
     	}
+    	Current->status = RUNNING;
+    	enableInterrupts();
     	return;
     }
     
     
     
-    // TODO let Current denote RUNNING
-    if (Current->status == RUNNING)
-	Current->status = READY;
+    // next will be Current so RUNNING
 	if (nextProcess->status == READY)
 	nextProcess->status = RUNNING;
     	
