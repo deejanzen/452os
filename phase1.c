@@ -962,6 +962,20 @@ int zap(int pid) {
     ProcTable[pid].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
 
+    // add ProcTable[pid] to end of Current->zappingList
+    procPtr ref = Current->zappingList;
+    if (ref == NULL) { // no current processes zapped
+        Current->zappingList = &ProcTable[pid];
+    }
+    else {
+        while (ref->nextZapping != NULL) { // walk down zapping list to the end
+            ref = ref->nextZapping;
+        }
+        // add ProcTable[pid] to end of list
+        ref->nextZapping = &ProcTable[pid];
+        ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
+    }
+
     // Current process was zapped wile in zap
     if (isZapped()) {
         return -1;
