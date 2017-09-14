@@ -949,10 +949,16 @@ int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
 
+    if (DEBUG && debugflag)
+        USLOSS_Console("Checking if process tried to zap itself\n");
+
     if (Current == &ProcTable[pid]) {
         USLOSS_Console("Process tried to zap itself\n");
         USLOSS_Halt(1);
     }
+
+    if (DEBUG && debugflag)
+        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
 
     if (ProcTable[pid].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
