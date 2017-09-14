@@ -204,8 +204,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[nextPid % 50].pid == -1) {
-            procSlot = nextPid % 50;
+        if (ProcTable[nextPid % MAXPROC].pid == -1) {
+            procSlot = nextPid % MAXPROC;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
@@ -981,10 +981,12 @@ int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
 
+    int index = pid % MAXPROC;
+
     if (DEBUG && debugflag)
         USLOSS_Console("Checking if process tried to zap itself\n");
 
-    if (Current == &ProcTable[pid]) {
+    if (Current == &ProcTable[index]) {
         USLOSS_Console("Process tried to zap itself\n");
         USLOSS_Halt(1);
     }
@@ -992,25 +994,32 @@ int zap(int pid) {
     if (DEBUG && debugflag)
         USLOSS_Console("Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[pid].pid == -1) {
+    if (ProcTable[index].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
-    ProcTable[pid].zapStatus = 1; // mark process as zapped
+    if (ProcTable[index].status == JOIN) {
+        ProcTable[index].wasJoinZapped = 1;
+    }
+
+    if (DEBUG && debugflag)
+        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+
+    ProcTable[index].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
 
     // add ProcTable[pid] to end of Current->zappingList
-    procPtr ref = Current->zappingList;
+    procPtr ref = ProcTable[index].zappingList;
     if (ref == NULL) { // no current processes zapped
-        Current->zappingList = &ProcTable[pid];
+        ProcTable[index].zappingList = Current;
     }
     else {
         while (ref->nextZapping != NULL) { // walk down zapping list to the end
             ref = ref->nextZapping;
         }
         // add ProcTable[pid] to end of list
-        ref->nextZapping = &ProcTable[pid];
+        ref->nextZapping = Current;
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
