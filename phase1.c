@@ -1281,6 +1281,8 @@ int unblockProc(int pid) {
         }
     }
 
+    dispatcher();
+
     if (isZapped()) return -1;
 
     enableInterrupts();
