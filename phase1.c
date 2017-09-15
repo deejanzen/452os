@@ -40,8 +40,6 @@ int readyListToBlocked(int pid);
 int moveToEndOfReadyListPriority(int pid);
 void printList(procPtr Head, char*, char*);
 
-void enqueue(procPtr list, procPtr p);
-procPtr dequeue(procPtr list);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -918,8 +916,6 @@ void checkKernelMode(char *nameOfFunc)
 
 void dumpProcesses()
 { 
-    checkKernelMode("dumpProcesses");
-    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
         USLOSS_Console("%d:\t", i);
@@ -1296,37 +1292,5 @@ int unblockProc(int pid) {
 
     enableInterrupts();
     return 0;
-}
-
-/*
- * enqueues process p into list
- */
-void enqueue(procPtr list, procPtr p) {
-    procPtr ref = list;
-
-    if (ref == NULL) { // empty list insert at head
-        list = p;
-        return;
-    }
-    else {
-        // find end of list
-        while (ref->nextProcPtr != NULL) {
-            ref = ref->nextProcPtr;
-        }
-        // add to end of list
-        ref->nextProcPtr = p;
-        p->nextProcPtr = NULL;
-    }
-}
-
-/*
- * dequeues a process from list 
- */
-procPtr dequeue(procPtr list) {
-    procPtr head = list;
-    if (head != NULL) {
-        list = list->nextProcPtr;
-    }
-    return head;
 }
 
