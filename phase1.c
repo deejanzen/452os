@@ -951,7 +951,7 @@ int zap(int pid) {
     if (DEBUG && debugflag)
         USLOSS_Console("zap(): Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[pid].pid == -1) {
+    if (ProcTable[index].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
@@ -980,7 +980,7 @@ int zap(int pid) {
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
-    // Current process was zapped wile in zap
+    // Current process was zapped while in zap
     if (isZapped()) {
         return -1;
     }
