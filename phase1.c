@@ -214,8 +214,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[nextPid % 50].pid == -1) {
-            procSlot = nextPid % 50;
+        if (ProcTable[nextPid % MAXPROC].pid == -1) {
+            procSlot = nextPid % MAXPROC;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
@@ -223,12 +223,11 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     if (i == MAXPROC + 1) {
         if (DEBUG && debugflag) {
-            USLOSS_Console("fork1(): no room ot ProcTable\n");
+            USLOSS_Console("fork1(): no room at ProcTable\n");
         }
         return -1;
     }
-	if (DEBUG && debugflag) 
-            USLOSS_Console("fork1(): new pid: %d for procSlot: %d\n",ProcTable[procSlot].pid,procSlot);
+    
     // fill-in entry in process table */
     if ( strlen(name) >= (MAXNAME - 1) ) {
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
@@ -350,7 +349,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     
     printList(ReadyList, "fork1", "ReadyList");
-    
+    printList(Current->childProcPtr, "fork1", "new procs child list");
+
     //DO NOT CALL dispatcher() on sentinel fork1()!!!
     if (ProcTable[procSlot].priority != 6){
     	if (DEBUG && debugflag) {
@@ -359,7 +359,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     	//disableInterrupts();
     	dispatcher();
     }
-
     return ProcTable[procSlot].pid;
 } /* fork1 */
 
@@ -414,7 +413,8 @@ int join(int *status)
 	
 	//disable interupts
     disableInterrupts();
-
+	printList(Current->childProcPtr, "join", "Current->childProcPtr");
+	printList(Current->unjoinedChildrenProcPtr, "join", "Current->unjoinedChildrenProcPtr");
     //join() function: There are three cases
     
     int unjoinedPid;
@@ -527,7 +527,10 @@ void quit(int status)
 	
 	//disable interrupts
 	disableInterrupts();
-	
+	if (Current->parent){
+		printList(Current->parent->childProcPtr, "join", "Current->parent->childProcPtr");
+		printList(Current->parent->unjoinedChildrenProcPtr, "join", "Current->parent->unjoinedChildrenProcPtr");
+	}
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
 	if (Current->childProcPtr != NULL){
@@ -583,6 +586,7 @@ void quit(int status)
     
     //remove yourself from Current->parent->childProcPtr list
     if (Current->parent && Current->parent->childProcPtr->pid == Current->pid){
+    	printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
     	if (DEBUG && debugflag) {
     		USLOSS_Console("quit(): removing %s from HEAD of %s's childProcPtr list\n", 
     						Current->name,
@@ -591,6 +595,7 @@ void quit(int status)
     	Current->parent->childProcPtr = Current->parent->childProcPtr->nextSiblingPtr;
     }
     else if (Current->parent){
+    	printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
     	procPtr temp = Current->parent->childProcPtr;
     	while(temp->nextSiblingPtr != NULL){
     		if (temp->nextSiblingPtr->pid == Current->pid){
@@ -604,8 +609,8 @@ void quit(int status)
     		}
     		temp = temp->nextSiblingPtr;
     	}
-    	
-    }
+    }	
+    printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
     
     //clear zappingList
     while(Current->zappingList != NULL){
@@ -654,7 +659,8 @@ void quit(int status)
     
     //Current->unjoinedChildrenProcPtr = NULL;
 	//Current->unjoinedSiblingProcPtr = NULL;
-    
+    Current->totalTime = 0;
+    Current->startTime = 0;
     
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
@@ -761,38 +767,40 @@ void dispatcher(void)
     	return;
     }
     else {
-    	//stash Current time used to  TT
-    	Current->totalTime += timeSlice;
-    	if (DEBUG && debugflag)
-    		USLOSS_Console("dispatcher(): stashing %d μs to %s's totalTime.\n", Current->totalTime,Current->name);
+    	
     	
     	//move Current to end of priority
-    	if(ReadyList->nextProcPtr && Current->pid == ReadyList->nextProcPtr->pid)
+    	if(ReadyList->nextProcPtr && Current->priority == ReadyList->nextProcPtr->priority)
     		moveToEndOfReadyListPriority(Current->pid);
     }
     
+    //stash Current time used to  TT
+	Current->totalTime += timeSlice;
+    if (DEBUG && debugflag)
+    	USLOSS_Console("dispatcher(): stashing %d μs to %s's totalTime.\n", Current->totalTime,Current->name);
     
-    //set Current to Ready
-    if (Current->status == RUNNING)
-		Current->status = READY;
+    // set Current to Ready
+//     if (Current->status == RUNNING)
     
     printList(ReadyList, "dispatcher", "ReadyList");
     
+    Current->status = READY;
+   
     procPtr nextProcess = NULL;
     
     nextProcess = ReadyList;
     
     // next will be Current so RUNNING
-	if (nextProcess->status == READY)
+	//if (nextProcess->status == READY)
 	nextProcess->status = RUNNING;
     	
     //update Current to new process
-    procPtr temp = Current;
+    procPtr oldCurr = Current;
     Current = nextProcess;	
     
     if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(%s, %s)\n", 
-    						temp->name,
+    						oldCurr->name,
     						Current->name);
     }
      
@@ -806,12 +814,12 @@ void dispatcher(void)
     					Current->name,
     					Current->startTime);
         
-    p1_switch(temp->pid, Current->pid);
+    p1_switch(oldCurr->pid, Current->pid);
 
     //enable interrupts or does launch() do this?
     enableInterrupts();
     
-    USLOSS_ContextSwitch(&temp->state, &Current->state);
+    USLOSS_ContextSwitch(&oldCurr->state, &Current->state);
         
 } /* dispatcher */
 
@@ -937,7 +945,7 @@ void checkKernelMode(char *nameOfFunc)
 void dumpProcesses()
 { 
     checkKernelMode("dumpProcesses");
-    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\ttotalTime\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
         USLOSS_Console("%d:\t", i);
@@ -946,6 +954,7 @@ void dumpProcesses()
         USLOSS_Console("%d\t", ProcTable[index].priority);
         USLOSS_Console("%d\t", ProcTable[index].status);
         USLOSS_Console("%d\t", ProcTable[index].numberOfChildren);
+        USLOSS_Console("%d\t", ProcTable[index].totalTime);
         USLOSS_Console("%s", ProcTable[index].name);
         USLOSS_Console("\n");
     }
@@ -1039,14 +1048,13 @@ int blockMe(int newStatus) {
 // The USLOSS_DeviceInput(int dev, int unit, int *status) function returns time in microseconds (= 1,000 ms); 
 // thus, time slice is 80,000 μs
 void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line 64)*/
-	int timeUsed = readtime();
-	if (timeUsed == -7){
-	   USLOSS_Console("readtime(): ERROR\n");
-	   return;
+	int currentTime;
+	
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
+		USLOSS_Halt(1);
 	}
-	if (DEBUG && debugflag)
-    	USLOSS_Console("clockHandler(): readtime(): %d \n",timeUsed);
-	if (timeUsed >= 80000){
+	if (currentTime - Current->startTime >= 80000){
 		dispatcher();
 	}
 }//end clockHandler
@@ -1169,6 +1177,7 @@ int readyListToBlocked(int PID){
 int moveToEndOfReadyListPriority(int PID){
 	int result = 0;
 	//no change needed
+	if( ReadyList->pid == 6) return 1;
 	if( ReadyList->pid == PID && ReadyList->nextProcPtr->pid == 6) return 1; 
 	
 	//remove from ReadyList
