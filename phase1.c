@@ -213,8 +213,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[nextPid % 50].pid == -1) {
-            procSlot = nextPid % 50;
+        if (ProcTable[nextPid % MAXPROC].pid == -1) {
+            procSlot = nextPid % MAXPROC;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
@@ -937,6 +937,8 @@ int getpid() {
 int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
+    
+    int index = pid % MAXPROC;
 
     if (DEBUG && debugflag)
         USLOSS_Console("zap(): Checking if process tried to zap itself\n");
