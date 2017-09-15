@@ -655,20 +655,20 @@ void quit(int status)
     
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): removing %s as HEAD of ReadyList.\n", Current->name);
-    	}
+    	// if (DEBUG && debugflag) {
+//     		USLOSS_Console("quit(): removing %s as HEAD of ReadyList.\n", Current->name);
+//     	}
     	ReadyList = Current->nextProcPtr;
     }else {
     	procPtr temp = ReadyList;
     	while(temp->nextProcPtr != NULL){
 			if (Current->pid == temp->nextProcPtr->pid){
-				if (DEBUG && debugflag) {
-					USLOSS_Console("quit(): removing %s from ReadyList in front of %s\n", 
-								   temp->nextProcPtr->name,
-								   temp->nextProcPtr->nextProcPtr->name);
-				
-				}
+				// if (DEBUG && debugflag) {
+// 					USLOSS_Console("quit(): removing %s from ReadyList in front of %s\n", 
+// 								   temp->nextProcPtr->name,
+// 								   temp->nextProcPtr->nextProcPtr->name);
+// 				
+// 				}
 				temp->nextProcPtr = temp->nextProcPtr->nextProcPtr;
 				break;
 			}
@@ -679,6 +679,8 @@ void quit(int status)
     
     //clean up
     Current->nextProcPtr = NULL;
+    
+    printList(ReadyList, "quit", "ReadyList");
     
     p1_quit(Current->pid);
 
@@ -714,8 +716,6 @@ void dispatcher(void)
     
     disableInterrupts();
     
-    printList(ReadyList, "dispatcher", "ReadyList");
-    
     //initial call of USLOSS_ContextSwitch
     if(!Current){
     	Current = ReadyList;
@@ -742,126 +742,32 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
+    
+    moveToEndOfReadyListPriority(Current->pid);
+    
     //set Current to Ready
     if (Current->status == RUNNING)
 		Current->status = READY;
-	
-    procPtr temp;
-    int rt = readtime();
-    //if (DEBUG && debugflag) 
-	//	USLOSS_Console("dispatcher(): %s's readtime: %d\n", Current->name, rt);
-    if (rt >= 80000){
-    	if (DEBUG && debugflag) 
-    			USLOSS_Console("dispatcher(): readtime(): %d μs > 80000 μs. Pulling Current: %s off ReadyList\n", 
-    							rt,
-    							Current->name);
-    	//Current to end of its priority
-    	if(Current->pid == ReadyList->pid){
-    		ReadyList = Current->nextProcPtr;
-    	}else{
-    		//walk downlist looking for prior
-    		procPtr prior = ReadyList;
-    		while (prior->nextProcPtr != NULL){
-    			if (prior->nextProcPtr->pid == Current->pid) break;
-    			prior = prior->nextProcPtr;
-    		}
-    		prior->nextProcPtr = Current->nextProcPtr;
-    	}
-    	
-    if (DEBUG && debugflag) 
-    	USLOSS_Console("dispatcher(): putting Current at end of its priority\n", rt);
-    //add Current to end of its priority list on the ReadyList
-    if (ReadyList == NULL){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): ReadyList is %s\n", Current->name);
-    	}
-    	ReadyList = Current;
-    }else if (Current->priority < ReadyList->priority ){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): ReadyList HEAD: %s\n", Current->name);
-    	}
-    	Current->nextProcPtr = ReadyList;
-    	ReadyList = Current;
-    }else {
-    	temp = ReadyList;
-    	while(temp->nextProcPtr != NULL){
-			if (Current->priority < temp->nextProcPtr->priority){
-				if (DEBUG && debugflag) {
-					USLOSS_Console("dispatcher(): Adding %s pri: %d to ReadyList ahead of %s pri: %d\n", 
-								   Current->name,
-								   Current->priority,
-								   temp->nextProcPtr->name,
-								   temp->nextProcPtr->priority);
-				
-				}
-				Current->nextProcPtr = temp->nextProcPtr;
-				temp->nextProcPtr = Current;
-				break;
-			}
-			temp = temp->nextProcPtr;
-    	}
-    	//end of list
-    }
-    }//end rt > 80000
     
-    
-    
-    moveToEndOfReadyListPriority(Current->pid);
+    printList(ReadyList, "dispatcher", "ReadyList");
     
     procPtr nextProcess = NULL;
     
     nextProcess = ReadyList;
+    
     if (Current->pid == nextProcess->pid){
     	if (DEBUG && debugflag) 
-			USLOSS_Console("dispatcher(): Current is next. continuing\n", 
+			USLOSS_Console("dispatcher(): Current is nextProcess. return\n"); 
+    	enableInterrupts();
     	return;
     }
-    
-    printList(ReadyList, "dispatcher", "ReadyList");
-    
-    // determine next Process to run
-    // if ((temp->priority <= Current->priority && temp->status == READY) || 
-//     	 temp->status == READY){
-//     	nextProcess = temp;
-// 
-//     }
-//     else{
-//     	while (temp->nextProcPtr != NULL){
-//     		if((temp->nextProcPtr->priority <= Current->priority && temp->nextProcPtr->status == READY )||
-//     		    temp->nextProcPtr->status == READY){
-//     			nextProcess = temp->nextProcPtr;
-//     			break;
-//     		}
-//    			temp = temp->nextProcPtr;
-//     	}
-//     }
-    
-    
-    //nothing has higher priority than Current
-    // if(!nextProcess ){
-//     	if (DEBUG && debugflag) {
-//     		USLOSS_Console("dispatcher(): nextProcess NULL. returning to %s.\n", Current->name);
-//     	} 
-//     	Current->status = RUNNING;
-//     	enableInterrupts();
-//     	return;
-//     }else if (nextProcess->pid == Current->pid){
-//     	if (DEBUG && debugflag) {
-//     		USLOSS_Console("dispatcher(): nextProcess == Current. returning to %s.\n", Current->name);
-//     	}
-//     	Current->status = RUNNING;
-//     	enableInterrupts();
-//     	return;
-//     }
-    
-    
     
     // next will be Current so RUNNING
 	if (nextProcess->status == READY)
 	nextProcess->status = RUNNING;
     	
     //update Current to new process
-    temp = Current;
+    procPtr temp = Current;
     Current = nextProcess;	
     
     if (DEBUG && debugflag) {
