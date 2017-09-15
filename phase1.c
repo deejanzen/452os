@@ -33,11 +33,15 @@ int getpid();
 int zap(int pid);
 int isZapped();
 int blockMe(int newStatus);
+int unblockProc(int pid);
 
 int blockedToReadyList(int pid);
 int readyListToBlocked(int pid);
 int moveToEndOfReadyListPriority(int pid);
 void printList(procPtr Head, char*, char*);
+
+void enqueue(procPtr list, procPtr p);
+procPtr dequeue(procPtr list);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -1210,5 +1214,108 @@ void printList(procPtr Head, char *funcName, char *listName){
     	USLOSS_Console("\n");
     }
 
+}
+
+/*
+ * unblocks process pid, changes its status to READY,
+ * adds it to the ReadyList, then calls the dispatcher
+ * returns:
+ *   -2 if pid was not blocked, does not exist, is Current, or
+ *      is blocked on a status <= 10
+ *   -1 if the calling process was zapped
+ *    0 otherwise
+ */
+int unblockProc(int pid) {
+    checkKernelMode("unblockProc");
+    disableInterrupts();
+
+    int index = pid % MAXPROC;
+    if (ProcTable[index].pid == -1) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock a nonexistent proc\n");
+        return -2;
+    }
+
+    if (&ProcTable[index] == Current) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock Current\n");
+
+        return -2;
+    }
+
+    if (ProcTable[index].status == READY) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock a ready proci\n");
+
+        return -2;
+    }
+
+    if (ProcTable[index].status <= 10) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock proc with status <= 10\n");
+
+        return -2;
+    }
+
+    // past all error cases, set status to READY and add to ReadyList
+    ProcTable[index].status = READY;
+
+    if (ReadyList == NULL) {
+        // ready list empty
+        ReadyList = &ProcTable[index];
+    }
+    else if (ProcTable[index].priority < ReadyList->priority) {
+        // add to head of ready list
+        ProcTable[index].nextProcPtr = ReadyList;
+        ReadyList = &ProcTable[index];
+    }
+    else {
+        procPtr temp = ReadyList;
+        while (temp->nextProcPtr != NULL) {
+            if (ProcTable[index].priority < temp->nextProcPtr->priority) {
+                ProcTable[index].nextProcPtr = temp->nextProcPtr;
+                temp->nextProcPtr = &ProcTable[index];
+                break;
+            }
+            temp = temp->nextProcPtr;
+        }
+    }
+
+    if (isZapped()) return -1;
+
+    enableInterrupts();
+    return 0;
+}
+
+/*
+ * enqueues process p into list
+ */
+void enqueue(procPtr list, procPtr p) {
+    procPtr ref = list;
+
+    if (ref == NULL) { // empty list insert at head
+        list = p;
+        return;
+    }
+    else {
+        // find end of list
+        while (ref->nextProcPtr != NULL) {
+            ref = ref->nextProcPtr;
+        }
+        // add to end of list
+        ref->nextProcPtr = p;
+        p->nextProcPtr = NULL;
+    }
+}
+
+/*
+ * dequeues a process from list 
+ */
+procPtr dequeue(procPtr list) {
+    procPtr head = list;
+    if (head != NULL) {
+        list = list->nextProcPtr;
+    }
+    return head;
 }
 
