@@ -43,7 +43,7 @@ void printList(procPtr Head, char*, char*);
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -104,6 +104,7 @@ void startup(int argc, char *argv[])
    		ProcTable[i].zappingList = NULL;
    		ProcTable[i].nextZapping = NULL;
    		ProcTable[i].wasJoinZapped = 0;
+   		ProcTable[i].totalTime = 0;
 	}
     
     // Initialize the Ready list, etc.
@@ -292,6 +293,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     																			ProcTable[procSlot].pid);
     		}
     		Current->childProcPtr = &ProcTable[procSlot];
+    		printList(Current->childProcPtr, "fork1", "children");
     		Current->numberOfChildren +=1;
     	}else{
     		procPtr temp = Current->childProcPtr;
@@ -303,11 +305,12 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     																	   ProcTable[procSlot].pid);
     		}
     		temp->nextSiblingPtr = &ProcTable[procSlot];
+    		printList(Current->childProcPtr, "fork1", "children");
     		Current->numberOfChildren +=1;
    	 	}
    	 	
     }
-    if (Current) printList(Current->childProcPtr, "fork1", "children");
+    if (Current && Current->childProcPtr) printList(Current->childProcPtr, "fork1", "children");
     //New processes should be placed at the end of the list of processes with the same priority.		
     //add to Readylist in-order
     if (ReadyList == NULL){
@@ -721,12 +724,13 @@ void dispatcher(void)
     	Current = ReadyList;
     	
     	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
-    		USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    		USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 			USLOSS_Halt(1);
     	}
-    	USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
-    							Current->name,
-    							Current->startTime);
+    	if (DEBUG && debugflag)
+    		USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
+    					    Current->name,
+    						Current->startTime);
     	
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
@@ -745,23 +749,26 @@ void dispatcher(void)
     
     int currentTime;
     if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK ){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
     }
     
     int timeSlice = currentTime - Current->startTime;
     if (ReadyList->pid == Current->pid && timeSlice < 80000){
     	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): ReadyList == Current. timeSlice: %d returning to %s.\n",Current->name, timeSlice);
+    		USLOSS_Console("dispatcher(): ReadyList == Current. %s returning timeSlice: %d μs\n",Current->name, timeSlice);
     	}
     	return;
     }
-    else (){
+    else {
     	//stash Current time used to  TT
     	Current->totalTime += timeSlice;
+    	if (DEBUG && debugflag)
+    		USLOSS_Console("dispatcher(): stashing %d μs to %s's totalTime.\n", Current->totalTime,Current->name);
     	
     	//move Current to end of priority
-    	moveToEndOfReadyListPriority(Current->pid);
+    	if(ReadyList->nextProcPtr && Current->pid == ReadyList->nextProcPtr->pid)
+    		moveToEndOfReadyListPriority(Current->pid);
     }
     
     
@@ -774,13 +781,6 @@ void dispatcher(void)
     procPtr nextProcess = NULL;
     
     nextProcess = ReadyList;
-    
-    if (Current->pid == nextProcess->pid){
-    	if (DEBUG && debugflag) 
-			USLOSS_Console("dispatcher(): Current is nextProcess. return\n"); 
-    	enableInterrupts();
-    	return;
-    }
     
     // next will be Current so RUNNING
 	if (nextProcess->status == READY)
@@ -798,7 +798,7 @@ void dispatcher(void)
      
     // set current time
     if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
     }
     if (DEBUG && debugflag) 
@@ -1059,17 +1059,14 @@ void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line
 //(4.1)The clock device has a 32-bit status register that is accessed via USLOSS_DeviceInput. 
 //	   This register contains the time (in microseconds) since USLOSS started running.
 int readtime(){
-	int currentTime = -1;
+	int currentTime;
 	
-	// if (DEBUG && debugflag) 
-	// USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
-    
 	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
 	}
 	
-	rereturn currentTime - Current->startTime;turn -7;
+	return (currentTime - Current->startTime) + Current->totalTime;
 }//end readtime
 
 // This operation returns the time (in microseconds) at which the currently
