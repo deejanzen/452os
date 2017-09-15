@@ -720,12 +720,13 @@ void dispatcher(void)
     if(!Current){
     	Current = ReadyList;
     	
-    	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
-    		if (DEBUG && debugflag) 
-    			USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
+    	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
+    		USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+			USLOSS_Halt(1);
+    	}
+    	USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
     							Current->name,
     							Current->startTime);
-    	}
     	
     	if (DEBUG && debugflag) {
     		USLOSS_Console("dispatcher(): USLOSS_ContextSwitch(NULL, %s)\n",Current->name);
@@ -742,8 +743,27 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
+    int currentTime;
+    if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK ){
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+		USLOSS_Halt(1);
+    }
     
-    moveToEndOfReadyListPriority(Current->pid);
+    int timeSlice = currentTime - Current->startTime;
+    if (ReadyList->pid == Current->pid && timeSlice < 80000){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("dispatcher(): ReadyList == Current. timeSlice: %d returning to %s.\n",Current->name, timeSlice);
+    	}
+    	return;
+    }
+    else (){
+    	//stash Current time used to  TT
+    	Current->totalTime += timeSlice;
+    	
+    	//move Current to end of priority
+    	moveToEndOfReadyListPriority(Current->pid);
+    }
+    
     
     //set Current to Ready
     if (Current->status == RUNNING)
@@ -777,12 +797,14 @@ void dispatcher(void)
     }
      
     // set current time
-    if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) == USLOSS_DEV_OK ){
-    	if (DEBUG && debugflag) 
-    		USLOSS_Console("dispatcher(): updating %s's startTime: %d μs\n",
-    					    Current->name,
-    						Current->startTime);
+    if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+		USLOSS_Halt(1);
     }
+    if (DEBUG && debugflag) 
+    	USLOSS_Console("dispatcher(): updating %s's startTime: %d μs\n",
+    					Current->name,
+    					Current->startTime);
         
     p1_switch(temp->pid, Current->pid);
 
@@ -1042,16 +1064,12 @@ int readtime(){
 	// if (DEBUG && debugflag) 
 	// USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
     
-	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) == USLOSS_DEV_OK){
-		// if (DEBUG && debugflag)
-//     		USLOSS_Console("USLOSS_DeviceInput() currentTime: %d startTime: %d\n",
-//     						currentTime, 
-//     						Current->startTime);
-		
-		return currentTime - Current->startTime;
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+		USLOSS_Halt(1);
 	}
 	
-	return -7;
+	rereturn currentTime - Current->startTime;turn -7;
 }//end readtime
 
 // This operation returns the time (in microseconds) at which the currently
