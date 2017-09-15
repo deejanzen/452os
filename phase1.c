@@ -34,15 +34,16 @@ int zap(int pid);
 int isZapped();
 int blockMe(int newStatus);
 
-void addToReadyList(int pid);
-procPtr pullFromReadyList(int pid);
-void moveToEndOfPriority(int pid);
+int blockedToReadyList(int pid);
+int readyListToBlocked(int pid);
+int moveToEndOfReadyListPriority(int pid);
+void printList(procPtr Head, char*, char*);
 
 
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -109,7 +110,8 @@ void startup(int argc, char *argv[])
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
     ReadyList = NULL;
-
+	Blocked = NULL;
+    
     // Initialize the clock interrupt handler
     USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
     USLOSS_IntVec[USLOSS_ILLEGAL_INT] = instructionHandler;
@@ -305,32 +307,32 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
    	 	}
    	 	
     }
-    
+    if (Current) printList(Current->childProcPtr, "fork1", "children");
     //New processes should be placed at the end of the list of processes with the same priority.		
     //add to Readylist in-order
     if (ReadyList == NULL){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("fork1(): Creating ReadyList with: %s\n",ProcTable[procSlot].name);
-    	}
+    	// if (DEBUG && debugflag) {
+//     		USLOSS_Console("fork1(): Creating ReadyList with: %s\n",ProcTable[procSlot].name);
+//     	}
     	ReadyList = &ProcTable[procSlot];
     }else if (ProcTable[procSlot].priority < ReadyList->priority ){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("fork1(): Adding to HEAD of ReadyList: %s\n", ProcTable[procSlot].name);
-    	}
+    	// if (DEBUG && debugflag) {
+//     		USLOSS_Console("fork1(): Adding to HEAD of ReadyList: %s\n", ProcTable[procSlot].name);
+//     	}
     	ProcTable[procSlot].nextProcPtr = ReadyList;
     	ReadyList = &ProcTable[procSlot];
     }else {
     	procPtr temp = ReadyList;
     	while(temp->nextProcPtr != NULL){
 			if (ProcTable[procSlot].priority < temp->nextProcPtr->priority){
-				if (DEBUG && debugflag) {
-					USLOSS_Console("fork1(): Adding %s p: %d to ReadyList in front of %s p: %d\n", 
-								   ProcTable[procSlot].name,
-								   ProcTable[procSlot].priority,
-								   temp->nextProcPtr->name,
-								   temp->nextProcPtr->priority);
-				
-				}
+				// if (DEBUG && debugflag) {
+// 					USLOSS_Console("fork1(): Adding %s p: %d to ReadyList in front of %s p: %d\n", 
+// 								   ProcTable[procSlot].name,
+// 								   ProcTable[procSlot].priority,
+// 								   temp->nextProcPtr->name,
+// 								   temp->nextProcPtr->priority);
+// 				
+// 				}
 				ProcTable[procSlot].nextProcPtr = temp->nextProcPtr;
 				temp->nextProcPtr = &ProcTable[procSlot];
 				break;
@@ -344,6 +346,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 //     	temp->nextProcPtr = &ProcTable[procSlot];
     }
     
+    printList(ReadyList, "fork1", "ReadyList");
     
     //DO NOT CALL dispatcher() on sentinel fork1()!!!
     if (ProcTable[procSlot].priority != 6){
@@ -446,6 +449,8 @@ int join(int *status)
     		}
     		
     		Current->status = JOIN;
+    		readyListToBlocked(Current->pid);
+    		printList(ReadyList, "join", "ReadyList");
     		
     		if (DEBUG && debugflag) {
     			USLOSS_Console("join(): calling dispatcher()\n");
@@ -561,7 +566,13 @@ void quit(int status)
     
     if (Current->parent && Current->parent->status == JOIN){
     	//set parent to ready from JOIN
+    	
     	Current->parent->status = READY;
+    	printList(Blocked, "quit", "Blocked");
+    	printList(ReadyList, "quit","ReadyList");
+    	blockedToReadyList(Current->parent->pid);
+    	printList(ReadyList, "quit","ReadyList");
+    	printList(Blocked, "quit", "Blocked");
 	}
     
     
@@ -592,13 +603,10 @@ void quit(int status)
     }
     
     //clear zappingList
-    if (DEBUG && debugflag) {
-    		USLOSS_Console("quit(): cleaning up process table.\n", Current->name);
-    }
-    
     while(Current->zappingList != NULL){
     	if (Current->zappingList->status == ZAPBLOCK){
     		Current->zappingList->status = READY;
+    		blockedToReadyList(Current->zappingList->pid); 
     		if (DEBUG && debugflag) {
     			USLOSS_Console("quit(): ZAPBLOCK %s stat: %d.\n", 
     						Current->zappingList->name,
@@ -704,6 +712,8 @@ void dispatcher(void)
     
     disableInterrupts();
     
+    printList(ReadyList, "dispatcher", "ReadyList");
+    
     //initial call of USLOSS_ContextSwitch
     if(!Current){
     	Current = ReadyList;
@@ -730,16 +740,6 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
-    procPtr walk;
-    if (DEBUG && debugflag){
-    USLOSS_Console("dispatcher(BRT): readylist: ");
-    walk = ReadyList;
-    while(walk != NULL){
-    	USLOSS_Console("%d:%s:%d ",walk->priority,walk->name,walk->status);
-    	walk = walk->nextProcPtr;
-    }
-    USLOSS_Console("\n");
-    }
     //set Current to Ready
     if (Current->status == RUNNING)
 		Current->status = READY;
@@ -804,61 +804,48 @@ void dispatcher(void)
     
     
     
+    moveToEndOfReadyListPriority(Current->pid);
     
     procPtr nextProcess = NULL;
-    temp = ReadyList;
+    
+    nextProcess = ReadyList;
+    
+    printList(ReadyList, "dispatcher", "ReadyList");
     
     // determine next Process to run
-    if ((temp->priority <= Current->priority && temp->status == READY) || 
-    	 temp->status == READY){
-    	nextProcess = temp;
-
-    }
-    else{
-    	while (temp->nextProcPtr != NULL){
-    		if((temp->nextProcPtr->priority <= Current->priority && temp->nextProcPtr->status == READY )||
-    		    temp->nextProcPtr->status == READY){
-    			nextProcess = temp->nextProcPtr;
-    			break;
-    		}
-   			temp = temp->nextProcPtr;
-    	}
-    }
-    if (DEBUG && debugflag) {
-    USLOSS_Console("dispatcher(RT): readylist: ");
-    walk = ReadyList;
-    while(walk != NULL){
-    	USLOSS_Console("%d:%s:%d ", walk->priority,walk->name,walk->status);
-    	walk = walk->nextProcPtr;
-    }
-    USLOSS_Console("\n");
-    }
-    /* 
-while (temp != NULL){
-    		if((temp->priority <= Current->priority && temp->nextProcPtr->status == READY )||
-    		    temp->nextProcPtr->status == READY){
-    			nextProcess = temp->nextProcPtr;
-    			break;
-    		}
-   			temp = temp->nextProcPtr;
-    }
- */
+    // if ((temp->priority <= Current->priority && temp->status == READY) || 
+//     	 temp->status == READY){
+//     	nextProcess = temp;
+// 
+//     }
+//     else{
+//     	while (temp->nextProcPtr != NULL){
+//     		if((temp->nextProcPtr->priority <= Current->priority && temp->nextProcPtr->status == READY )||
+//     		    temp->nextProcPtr->status == READY){
+//     			nextProcess = temp->nextProcPtr;
+//     			break;
+//     		}
+//    			temp = temp->nextProcPtr;
+//     	}
+//     }
+    
+    
     //nothing has higher priority than Current
-    if(!nextProcess ){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): nextProcess NULL. returning to %s.\n", Current->name);
-    	} 
-    	Current->status = RUNNING;
-    	enableInterrupts();
-    	return;
-    }else if (nextProcess->pid == Current->pid){
-    	if (DEBUG && debugflag) {
-    		USLOSS_Console("dispatcher(): nextProcess == Current. returning to %s.\n", Current->name);
-    	}
-    	Current->status = RUNNING;
-    	enableInterrupts();
-    	return;
-    }
+    // if(!nextProcess ){
+//     	if (DEBUG && debugflag) {
+//     		USLOSS_Console("dispatcher(): nextProcess NULL. returning to %s.\n", Current->name);
+//     	} 
+//     	Current->status = RUNNING;
+//     	enableInterrupts();
+//     	return;
+//     }else if (nextProcess->pid == Current->pid){
+//     	if (DEBUG && debugflag) {
+//     		USLOSS_Console("dispatcher(): nextProcess == Current. returning to %s.\n", Current->name);
+//     	}
+//     	Current->status = RUNNING;
+//     	enableInterrupts();
+//     	return;
+//     }
     
     
     
@@ -1169,4 +1156,139 @@ void instructionHandler(int dev, void *arg) {
 
 }
 
+int blockedToReadyList(int PID){
+	int result = 0;
+	
+	procPtr walk = Blocked;
+	procPtr temp = NULL;
+	if(walk){
+		//pull pid from Blocked
+		if(walk->pid == PID){
+			temp = walk;
+			Blocked = Blocked->nextProcPtr;
+			result = 1;
+		}else {
+			while(walk->nextProcPtr != NULL){
+				if (walk->nextProcPtr->pid == PID){ //1->2->3
+					temp = walk->nextProcPtr;
+					walk->nextProcPtr = walk->nextProcPtr->nextProcPtr;
+					result = 1;
+					break;
+				}
+				walk = walk->nextProcPtr;
+			}
+		}
+		
+		//add pid to ReadyList
+		if (result){
+			if (temp->priority < ReadyList->priority){
+				temp->nextProcPtr = ReadyList;
+				ReadyList = temp;
+			}else{
+				walk = ReadyList;
+    			while(walk->nextProcPtr != NULL){
+					if (temp->priority < walk->nextProcPtr->priority){ //1-2-3
+						temp->nextProcPtr = walk->nextProcPtr;
+						walk->nextProcPtr = temp;
+						break;
+					}
+					walk = walk->nextProcPtr;
+				}
+    		}
+		}
+		
+	}
+	return result;
+}
+
+int readyListToBlocked(int PID){
+	int result = 0;
+	
+	procPtr walk = ReadyList;
+	procPtr temp = NULL;
+	if(walk){
+		//pull pid from ReadyList
+		if(walk->pid == PID){
+			temp = walk;
+			ReadyList = ReadyList->nextProcPtr;
+			result = 1;
+		}else {
+			while(walk->nextProcPtr != NULL){
+				if (walk->nextProcPtr->pid == PID){ //1->2->3
+					temp = walk->nextProcPtr;
+					walk->nextProcPtr = walk->nextProcPtr->nextProcPtr;
+					result = 1;
+					break;
+				}
+				walk = walk->nextProcPtr;
+			}
+		}
+		//add pid to Blocked
+		if (result){
+			temp->nextProcPtr = Blocked;
+			Blocked = temp;
+		}
+	}
+	return result;
+}
+int moveToEndOfReadyListPriority(int PID){
+	int result = 0;
+	//no change needed
+	if( ReadyList->pid == PID && ReadyList->nextProcPtr->pid == 6) return 1; 
+	
+	//remove from ReadyList
+	procPtr walk = NULL;
+	procPtr temp = NULL;
+	if (PID == ReadyList->pid){                 
+		temp = ReadyList;
+		ReadyList = ReadyList->nextProcPtr;
+		result = 1;
+	}else{
+		walk = ReadyList;
+		while(walk->nextProcPtr != NULL){
+			if (walk->nextProcPtr->pid == PID){
+				temp = walk->nextProcPtr;
+				walk->nextProcPtr = walk->nextProcPtr->nextProcPtr;
+				result = 1;
+				break;
+			}
+			walk = walk->nextProcPtr;
+		}
+	}
+	
+	//add to end of ReadyList
+	if(result){
+		if (temp->priority < ReadyList->priority){
+			temp->nextProcPtr = ReadyList;
+			ReadyList = temp;
+			result = 2;
+		}else{
+			walk = ReadyList;
+			while(walk->nextProcPtr != NULL){
+				if (temp->priority < walk->nextProcPtr->priority){      //1-1-2-2-3-S
+					temp->nextProcPtr = walk->nextProcPtr;
+					walk->nextProcPtr = temp;
+					result = 2;
+					break;
+				}
+				walk = walk->nextProcPtr;
+			}
+		}
+		
+	}
+	return result;
+}
+
+void printList(procPtr Head, char *funcName, char *listName){
+    if (DEBUG && debugflag){
+    	procPtr walk = Head;
+    	USLOSS_Console("%s(): %s: ", funcName, listName);
+    	while(walk != NULL){
+    		USLOSS_Console("%d:%s %d  ",walk->priority,walk->name,walk->status);
+    		walk = walk->nextProcPtr;
+    	}
+    	USLOSS_Console("\n");
+    }
+
+}
 
