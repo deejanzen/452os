@@ -984,15 +984,16 @@ int zap(int pid) {
     int index = pid % MAXPROC;
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if process tried to zap itself\n");
+        USLOSS_Console("zap(): Checking if process tried to zap itself\n");
 
     if (Current == &ProcTable[index]) {
-        USLOSS_Console("Process tried to zap itself\n");
+        USLOSS_Console("zap(): process %d tried to zap itself.  ", pid);
+        USLOSS_Console("Halting...\n");
         USLOSS_Halt(1);
     }
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+        USLOSS_Console("zap(): Checking if trying to zap a nonexistent process\n");
 
     if (ProcTable[index].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
@@ -1004,7 +1005,7 @@ int zap(int pid) {
     }
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+        USLOSS_Console("zap(): Setting statuses\n");
 
     ProcTable[index].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
