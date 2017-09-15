@@ -34,16 +34,23 @@ int zap(int pid);
 int isZapped();
 int blockMe(int newStatus);
 
+void addToReadyList(int pid);
+procPtr pullFromReadyList(int pid);
+void moveToEndOfPriority(int pid);
+
+
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
 
 // Process lists
 static procPtr ReadyList;
+
+static procPtr Blocked;
 
 // current process ID
 procPtr Current;
@@ -204,8 +211,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[nextPid % MAXPROC].pid == -1) {
-            procSlot = nextPid % MAXPROC;
+        if (ProcTable[nextPid % 50].pid == -1) {
+            procSlot = nextPid % 50;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
@@ -723,6 +730,16 @@ void dispatcher(void)
     	USLOSS_ContextSwitch(NULL, &Current->state);
     }
     
+    procPtr walk;
+    if (DEBUG && debugflag){
+    USLOSS_Console("dispatcher(BRT): readylist: ");
+    walk = ReadyList;
+    while(walk != NULL){
+    	USLOSS_Console("%d:%s:%d ",walk->priority,walk->name,walk->status);
+    	walk = walk->nextProcPtr;
+    }
+    USLOSS_Console("\n");
+    }
     //set Current to Ready
     if (Current->status == RUNNING)
 		Current->status = READY;
@@ -731,7 +748,7 @@ void dispatcher(void)
     int rt = readtime();
     //if (DEBUG && debugflag) 
 	//	USLOSS_Console("dispatcher(): %s's readtime: %d\n", Current->name, rt);
-    if (rt > 80000){
+    if (rt >= 80000){
     	if (DEBUG && debugflag) 
     			USLOSS_Console("dispatcher(): readtime(): %d μs > 80000 μs. Pulling Current: %s off ReadyList\n", 
     							rt,
@@ -791,7 +808,7 @@ void dispatcher(void)
     procPtr nextProcess = NULL;
     temp = ReadyList;
     
-    //determine next Process to run
+    // determine next Process to run
     if ((temp->priority <= Current->priority && temp->status == READY) || 
     	 temp->status == READY){
     	nextProcess = temp;
@@ -807,7 +824,25 @@ void dispatcher(void)
    			temp = temp->nextProcPtr;
     	}
     }
-    
+    if (DEBUG && debugflag) {
+    USLOSS_Console("dispatcher(RT): readylist: ");
+    walk = ReadyList;
+    while(walk != NULL){
+    	USLOSS_Console("%d:%s:%d ", walk->priority,walk->name,walk->status);
+    	walk = walk->nextProcPtr;
+    }
+    USLOSS_Console("\n");
+    }
+    /* 
+while (temp != NULL){
+    		if((temp->priority <= Current->priority && temp->nextProcPtr->status == READY )||
+    		    temp->nextProcPtr->status == READY){
+    			nextProcess = temp->nextProcPtr;
+    			break;
+    		}
+   			temp = temp->nextProcPtr;
+    }
+ */
     //nothing has higher priority than Current
     if(!nextProcess ){
     	if (DEBUG && debugflag) {
@@ -890,7 +925,20 @@ static void checkDeadlock()
 	//TODO walk ReadyList and check for blocked process or join/waiting
     checkKernelMode("checkDeadlock");
 	
-	if (ReadyList->priority == 6){
+	if (DEBUG && debugflag)
+        	USLOSS_Console("checkDeadlock(): starting.\n");
+     
+    int numProc = 0;   	
+	procPtr temp = ReadyList;
+	while(temp != NULL){
+		numProc++;
+		temp = temp->nextProcPtr;
+	}
+	
+	if (DEBUG && debugflag)
+        	USLOSS_Console("checkDeadlock(): numProc = %d.\n", numProc);
+        	
+	if (numProc == 1){
 		if (DEBUG && debugflag){
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
         	USLOSS_Console("sentinel(): calling halt(0).\n");
@@ -904,6 +952,8 @@ static void checkDeadlock()
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
         	USLOSS_Console("sentinel(): calling halt(1).\n");
         }
+        USLOSS_Console("checkDeadlock(): numProc = %d. Only Sentinel should be left. Halting...\n",
+        			    numProc);
         USLOSS_Halt(1);
 	}
 	
@@ -981,12 +1031,10 @@ int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
 
-    int index = pid % MAXPROC;
-
     if (DEBUG && debugflag)
         USLOSS_Console("Checking if process tried to zap itself\n");
 
-    if (Current == &ProcTable[index]) {
+    if (Current == &ProcTable[pid]) {
         USLOSS_Console("Process tried to zap itself\n");
         USLOSS_Halt(1);
     }
@@ -994,32 +1042,25 @@ int zap(int pid) {
     if (DEBUG && debugflag)
         USLOSS_Console("Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[index].pid == -1) {
+    if (ProcTable[pid].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
-    if (ProcTable[index].status == JOIN) {
-        ProcTable[index].wasJoinZapped = 1;
-    }
-
-    if (DEBUG && debugflag)
-        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
-
-    ProcTable[index].zapStatus = 1; // mark process as zapped
+    ProcTable[pid].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
 
     // add ProcTable[pid] to end of Current->zappingList
-    procPtr ref = ProcTable[index].zappingList;
+    procPtr ref = Current->zappingList;
     if (ref == NULL) { // no current processes zapped
-        ProcTable[index].zappingList = Current;
+        Current->zappingList = &ProcTable[pid];
     }
     else {
         while (ref->nextZapping != NULL) { // walk down zapping list to the end
             ref = ref->nextZapping;
         }
         // add ProcTable[pid] to end of list
-        ref->nextZapping = Current;
+        ref->nextZapping = &ProcTable[pid];
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
@@ -1076,7 +1117,7 @@ void clockHandler(int dev, void *arg){   /*int dev, void *arg (see usloss.h line
 	}
 	if (DEBUG && debugflag)
     	USLOSS_Console("clockHandler(): readtime(): %d \n",timeUsed);
-	if (timeUsed > 80000){
+	if (timeUsed >= 80000){
 		dispatcher();
 	}
 }//end clockHandler
@@ -1127,3 +1168,5 @@ void timeSlice(void){
 void instructionHandler(int dev, void *arg) {
 
 }
+
+
