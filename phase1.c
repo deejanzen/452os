@@ -43,7 +43,7 @@ void printList(procPtr Head, char*, char*);
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -213,8 +213,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // Is there room in the process table? What is the next PID?
     int i;
     for (i = 1; i <= MAXPROC; i++) {
-        if (ProcTable[nextPid % 50].pid == -1) {
-            procSlot = nextPid % 50;
+        if (ProcTable[nextPid % MAXPROC].pid == -1) {
+            procSlot = nextPid % MAXPROC;
             ProcTable[procSlot].pid = nextPid++;
             break;
         }
@@ -937,24 +937,33 @@ int getpid() {
 int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
+    
+    int index = pid % MAXPROC;
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if process tried to zap itself\n");
+        USLOSS_Console("zap(): Checking if process tried to zap itself\n");
 
-    if (Current == &ProcTable[pid]) {
-        USLOSS_Console("Process tried to zap itself\n");
-        USLOSS_Halt(1);
+    if (Current == &ProcTable[index]) {
+        USLOSS_Console("zap(): process %d tried to zap itself.  ", pid);
+        USLOSS_Console("Halting...\n");
     }
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+        USLOSS_Console("zap(): Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[pid].pid == -1) {
+    if (ProcTable[index].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
-    ProcTable[pid].zapStatus = 1; // mark process as zapped
+    if (ProcTable[index].status == JOIN) {
+        ProcTable[index].wasJoinZapped = 1;
+    }
+
+    if (DEBUG && debugflag)
+        USLOSS_Console("zap(): Setting statuses\n");
+
+    ProcTable[index].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
 
     // add ProcTable[pid] to end of Current->zappingList
@@ -971,7 +980,7 @@ int zap(int pid) {
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
-    // Current process was zapped wile in zap
+    // Current process was zapped while in zap
     if (isZapped()) {
         return -1;
     }
