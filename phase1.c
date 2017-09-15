@@ -45,7 +45,7 @@ void printList(procPtr Head, char*, char*);
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -916,6 +916,8 @@ void checkKernelMode(char *nameOfFunc)
 
 void dumpProcesses()
 { 
+    checkKernelMode("dumpProcesses");
+    USLOSS_Console("PROC\tPID\tPPID\tPRIOR\tSTATUS\t#CH\tNAME\n");
     for (int i = 1; i <= MAXPROC; i++) {
         int index = i % MAXPROC;
         USLOSS_Console("%d:\t", i);
