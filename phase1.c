@@ -568,11 +568,13 @@ void quit(int status)
     	//set parent to ready from JOIN
     	
     	Current->parent->status = READY;
+    	
     	printList(Blocked, "quit", "Blocked");
-    	printList(ReadyList, "quit","ReadyList");
+
     	blockedToReadyList(Current->parent->pid);
+    	
     	printList(ReadyList, "quit","ReadyList");
-    	printList(Blocked, "quit", "Blocked");
+
 	}
     
     
@@ -809,6 +811,11 @@ void dispatcher(void)
     procPtr nextProcess = NULL;
     
     nextProcess = ReadyList;
+    if (Current->pid == nextProcess->pid){
+    	if (DEBUG && debugflag) 
+			USLOSS_Console("dispatcher(): Current is next. continuing\n", 
+    	return;
+    }
     
     printList(ReadyList, "dispatcher", "ReadyList");
     
@@ -922,10 +929,17 @@ static void checkDeadlock()
 		temp = temp->nextProcPtr;
 	}
 	
+	int numBlockedProc = 0;   	
+	temp = Blocked;
+	while(temp != NULL){
+		numBlockedProc++;
+		temp = temp->nextProcPtr;
+	}
+	
 	if (DEBUG && debugflag)
-        	USLOSS_Console("checkDeadlock(): numProc = %d.\n", numProc);
+        	USLOSS_Console("checkDeadlock(): numProc = %d.\n", numProc + numBlockedProc);
         	
-	if (numProc == 1){
+	if (numProc  + numBlockedProc == 1){
 		if (DEBUG && debugflag){
         	USLOSS_Console("sentinel(): called checkDeadlock().\n");
         	USLOSS_Console("sentinel(): calling halt(0).\n");
@@ -940,7 +954,7 @@ static void checkDeadlock()
         	USLOSS_Console("sentinel(): calling halt(1).\n");
         }
         USLOSS_Console("checkDeadlock(): numProc = %d. Only Sentinel should be left. Halting...\n",
-        			    numProc);
+        			    numProc + numBlockedProc);
         USLOSS_Halt(1);
 	}
 	
