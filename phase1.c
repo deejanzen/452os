@@ -38,12 +38,13 @@ int blockedToReadyList(int pid);
 int readyListToBlocked(int pid);
 int moveToEndOfReadyListPriority(int pid);
 void printList(procPtr Head, char*, char*);
-
+void printChildren(procPtr Head, char*);
+void printUnjoinedChildren(procPtr Head, char*);
 
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -285,31 +286,28 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 		if (DEBUG && debugflag) {
     		USLOSS_Console("fork1(): parent: %s\n",Current->name);
     	}
-		
 		if (Current->childProcPtr == NULL){
-			if (DEBUG && debugflag) {
-    			USLOSS_Console("fork1(): creating ChildList with: %s pid: %d\n",ProcTable[procSlot].name,
-    																			ProcTable[procSlot].pid);
-    		}
+			// if (DEBUG && debugflag) {
+//     			USLOSS_Console("fork1(): creating ChildList with: %s pid: %d\n",ProcTable[procSlot].name,
+//     																			ProcTable[procSlot].pid);
+//     		}
     		Current->childProcPtr = &ProcTable[procSlot];
-    		printList(Current->childProcPtr, "fork1", "children");
     		Current->numberOfChildren +=1;
     	}else{
     		procPtr temp = Current->childProcPtr;
     		while(temp->nextSiblingPtr != NULL){ 
     			temp = temp->nextSiblingPtr;
     		}
-    		if (DEBUG && debugflag) {
-    			USLOSS_Console("fork1(): adding %s pid: %d to ChildList\n",ProcTable[procSlot].name,
-    																	   ProcTable[procSlot].pid);
-    		}
+    		// if (DEBUG && debugflag) {
+//     			USLOSS_Console("fork1(): adding %s pid: %d to ChildList\n",ProcTable[procSlot].name,
+//     																	   ProcTable[procSlot].pid);
+//     		}
     		temp->nextSiblingPtr = &ProcTable[procSlot];
-    		printList(Current->childProcPtr, "fork1", "children");
     		Current->numberOfChildren +=1;
    	 	}
-   	 	
+   	 	printChildren(Current->childProcPtr, "fork1");
+
     }
-    if (Current && Current->childProcPtr) printList(Current->childProcPtr, "fork1", "children");
     //New processes should be placed at the end of the list of processes with the same priority.		
     //add to Readylist in-order
     if (ReadyList == NULL){
@@ -349,7 +347,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     
     printList(ReadyList, "fork1", "ReadyList");
-    printList(Current->childProcPtr, "fork1", "new procs child list");
 
     //DO NOT CALL dispatcher() on sentinel fork1()!!!
     if (ProcTable[procSlot].priority != 6){
@@ -413,8 +410,8 @@ int join(int *status)
 	
 	//disable interupts
     disableInterrupts();
-	printList(Current->childProcPtr, "join", "Current->childProcPtr");
-	printList(Current->unjoinedChildrenProcPtr, "join", "Current->unjoinedChildrenProcPtr");
+	printChildren(Current->childProcPtr, "join");
+	printUnjoinedChildren(Current->unjoinedChildrenProcPtr, "join");
     //join() function: There are three cases
     
     int unjoinedPid;
@@ -454,7 +451,7 @@ int join(int *status)
     		Current->status = JOIN;
     		readyListToBlocked(Current->pid);
     		printList(ReadyList, "join", "ReadyList");
-    		
+    		printList(Blocked, "join", "Blocked");
     		if (DEBUG && debugflag) {
     			USLOSS_Console("join(): calling dispatcher()\n");
     		}
@@ -471,6 +468,9 @@ int join(int *status)
     			USLOSS_Console("join(): continuing after JOIN\n");
     		}
     		
+    		printList(ReadyList, "join", "ReadyList");
+    		printList(Blocked, "join", "Blocked");
+    		
     		*status = Current->unjoinedChildrenProcPtr->quitStatus;
     		unjoinedPid = Current->unjoinedChildrenProcPtr->pid;
     	}//end (3)No (unjoined) child has quit() ... must wait.
@@ -484,7 +484,8 @@ int join(int *status)
 	Current->unjoinedChildrenProcPtr->pid = -1;
 	Current->unjoinedChildrenProcPtr->status = INIT;
 	Current->unjoinedChildrenProcPtr->name[0] = '\0';
-	
+	Current->unjoinedChildrenProcPtr->totalTime = 0;
+    Current->unjoinedChildrenProcPtr->startTime = 0;
 	//free stack memory
 	if (DEBUG && debugflag) {
     	USLOSS_Console("join(): free() \n");
@@ -528,8 +529,11 @@ void quit(int status)
 	//disable interrupts
 	disableInterrupts();
 	if (Current->parent){
-		printList(Current->parent->childProcPtr, "join", "Current->parent->childProcPtr");
-		printList(Current->parent->unjoinedChildrenProcPtr, "join", "Current->parent->unjoinedChildrenProcPtr");
+		if (DEBUG && debugflag){
+        	USLOSS_Console("quit(): %s's children lists\n", Current->parent->name);
+    	}
+		printChildren(Current->parent->childProcPtr, "quit");
+		printUnjoinedChildren(Current->parent->unjoinedChildrenProcPtr, "quit");
 	}
 	//Error if a process with active children calls quit(). Halt USLOSS with 
 	//appropriate error message.
@@ -570,23 +574,9 @@ void quit(int status)
     	temp->unjoinedSiblingProcPtr = Current;
     }
     
-    if (Current->parent && Current->parent->status == JOIN){
-    	//set parent to ready from JOIN
-    	
-    	Current->parent->status = READY;
-    	
-    	printList(Blocked, "quit", "Blocked");
-
-    	blockedToReadyList(Current->parent->pid);
-    	
-    	printList(ReadyList, "quit","ReadyList");
-
-	}
-    
     
     //remove yourself from Current->parent->childProcPtr list
     if (Current->parent && Current->parent->childProcPtr->pid == Current->pid){
-    	printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
     	if (DEBUG && debugflag) {
     		USLOSS_Console("quit(): removing %s from HEAD of %s's childProcPtr list\n", 
     						Current->name,
@@ -595,7 +585,6 @@ void quit(int status)
     	Current->parent->childProcPtr = Current->parent->childProcPtr->nextSiblingPtr;
     }
     else if (Current->parent){
-    	printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
     	procPtr temp = Current->parent->childProcPtr;
     	while(temp->nextSiblingPtr != NULL){
     		if (temp->nextSiblingPtr->pid == Current->pid){
@@ -610,8 +599,13 @@ void quit(int status)
     		temp = temp->nextSiblingPtr;
     	}
     }	
-    printList(Current->parent->childProcPtr, "quit", "Current->parent->childProcPtr");
-    
+	if (Current->parent){
+		if (DEBUG && debugflag){
+        	USLOSS_Console("quit(): %s's children lists\n", Current->parent->name);
+    	}
+		printChildren(Current->parent->childProcPtr, "quit");
+		printUnjoinedChildren(Current->parent->unjoinedChildrenProcPtr, "quit");
+	}    
     //clear zappingList
     while(Current->zappingList != NULL){
     	if (Current->zappingList->status == ZAPBLOCK){
@@ -659,8 +653,8 @@ void quit(int status)
     
     //Current->unjoinedChildrenProcPtr = NULL;
 	//Current->unjoinedSiblingProcPtr = NULL;
-    Current->totalTime = 0;
-    Current->startTime = 0;
+    //Current->totalTime = 0;
+	//Current->startTime = 0;
     
     //Remove quit() process from Readylist in-order
     if (Current->pid == ReadyList->pid ){
@@ -685,6 +679,22 @@ void quit(int status)
     	}
     	//end of list
     }
+   
+    
+    if (Current->parent && Current->parent->status == JOIN){
+    	if (DEBUG && debugflag) {
+    		USLOSS_Console("quit(): calling dispatcher().\n");
+    	}
+    	//set parent to ready from JOIN
+    	Current->parent->status = READY;
+    	
+    	printList(Blocked, "quit", "Blocked");
+
+    	blockedToReadyList(Current->parent->pid);
+    	
+    	printList(ReadyList, "quit","ReadyList");
+
+	}
     
     //clean up
     Current->nextProcPtr = NULL;
@@ -775,16 +785,17 @@ void dispatcher(void)
     }
     
     //stash Current time used to  TT
-	Current->totalTime += timeSlice;
-    if (DEBUG && debugflag)
-    	USLOSS_Console("dispatcher(): stashing %d μs to %s's totalTime.\n", Current->totalTime,Current->name);
-    
-    // set Current to Ready
-//     if (Current->status == RUNNING)
+	if (Current->status != QUIT){
+		Current->totalTime += timeSlice;
+    	if (DEBUG && debugflag)
+    		USLOSS_Console("dispatcher(): stashing %d μs to %s's totalTime.\n", Current->totalTime,Current->name);
+    }
     
     printList(ReadyList, "dispatcher", "ReadyList");
     
-    Current->status = READY;
+    // set Current to Ready
+    if (Current->status == RUNNING)
+    	Current->status = READY;
    
     procPtr nextProcess = NULL;
     
@@ -1235,4 +1246,28 @@ void printList(procPtr Head, char *funcName, char *listName){
     }
 
 }
+void printChildren(procPtr childProcPtr, char *funcName){
+	if (DEBUG && debugflag){
+    	procPtr walk = childProcPtr;
+    	USLOSS_Console("%s(): children: ", funcName);
+    	while(walk != NULL){
+    		USLOSS_Console("%s %d  ", walk->name,walk->status);
+    		walk = walk->nextSiblingPtr;
+    	}
+    	USLOSS_Console("\n");
+    }
+}
+
+void printUnjoinedChildren(procPtr unjoined, char *funcName){
+if (DEBUG && debugflag){
+    	procPtr walk = unjoined;
+    	USLOSS_Console("%s(): unjoined: ", funcName);
+    	while(walk != NULL){
+    		USLOSS_Console("%s %d  ", walk->name,walk->status);
+    		walk = walk->unjoinedSiblingProcPtr;
+    	}
+    	USLOSS_Console("\n");
+    }
+}
+
 
