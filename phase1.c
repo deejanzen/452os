@@ -723,7 +723,7 @@ void dispatcher(void)
     	Current = ReadyList;
     	
     	if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
-    		USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    		USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 			USLOSS_Halt(1);
     	}
     	USLOSS_Console("dispatcher(): USLDevInp() initial setting of %s's startTime: %d μs\n",
@@ -747,7 +747,7 @@ void dispatcher(void)
     
     int currentTime;
     if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK ){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
     }
     
@@ -758,7 +758,7 @@ void dispatcher(void)
     	}
     	return;
     }
-    else (){
+    else {
     	//stash Current time used to  TT
     	Current->totalTime += timeSlice;
     	
@@ -800,7 +800,7 @@ void dispatcher(void)
      
     // set current time
     if ( USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &Current->startTime) != USLOSS_DEV_OK ){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
     }
     if (DEBUG && debugflag) 
@@ -1076,11 +1076,11 @@ int readtime(){
 	// USLOSS_Console("readtime(): called USLOSS_DeviceInput()\n");
     
 	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
-    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n",
+    	USLOSS_Console("USLOSS_DeviceInput() did not return USLOSS_DEV_OK. Halting...\n");
 		USLOSS_Halt(1);
 	}
 	
-	rereturn currentTime - Current->startTime;turn -7;
+	return Current->totalTime + (currentTime - Current->startTime);
 }//end readtime
 
 // This operation returns the time (in microseconds) at which the currently
