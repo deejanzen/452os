@@ -41,12 +41,15 @@ int moveToEndOfReadyListPriority(int pid);
 void printList(procPtr Head, char*, char*);
 void printChildren(procPtr Head, char*);
 void printUnjoinedChildren(procPtr Head, char*);
+void printZapping(procPtr Head, char*);
+procPtr getProcPtr(int pid);
+
 
 
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 0;
+int debugflag = 1;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -608,6 +611,8 @@ void quit(int status)
 		printChildren(Current->parent->childProcPtr, "quit");
 		printUnjoinedChildren(Current->parent->unjoinedChildrenProcPtr, "quit");
 	}    
+    
+    printZapping(Current->zappingList, "quit");
     //clear zappingList
     while(Current->zappingList != NULL){
     	if (Current->zappingList->status == ZAPBLOCK){
@@ -778,16 +783,20 @@ void dispatcher(void)
     	}
     	return;
     }
-    else {
+    
 
     	//stash Current time used to  TT
     	Current->totalTime += timeSlice;
 
     	
     	//move Current to end of priority
-    	if(ReadyList->nextProcPtr && Current->priority == ReadyList->nextProcPtr->priority)
-    		moveToEndOfReadyListPriority(Current->pid);
-    }
+//     	if(ReadyList->nextProcPtr && Current->priority < ReadyList->nextProcPtr->priority)
+// 		if(Current->priority > ReadyList->priority)
+    	int ref = moveToEndOfReadyListPriority(Current->pid);
+    	if (DEBUG && debugflag)
+    		USLOSS_Console("dispatcher(): moveToEnd returned %d\n",ref); 
+    						
+    
     
     //stash Current time used to  TT
 	if (Current->status != QUIT){
@@ -873,7 +882,9 @@ static void checkDeadlock()
 	
 	if (DEBUG && debugflag)
         	USLOSS_Console("checkDeadlock(): starting.\n");
-     
+    printList(ReadyList, "checkDeadlock", "ReadyList");
+    printList(Blocked, "checkDeadlock", "BLocked");
+
     int numProc = 0;   	
 	procPtr temp = ReadyList;
 	while(temp != NULL){
@@ -986,25 +997,38 @@ int zap(int pid) {
     disableInterrupts();
     
     int index = pid % MAXPROC;
-
+	
+	procPtr zap = getProcPtr(pid);
+	if (DEBUG && debugflag){
+		if (zap) USLOSS_Console("zap(): name: %s\n", zap->name);
+		else USLOSS_Console("zap(): no proc pid: %d found \n", pid);
+    }
+    
     if (DEBUG && debugflag)
-        USLOSS_Console("zap(): Checking if process tried to zap itself\n");
-
-    if (Current == &ProcTable[index]) {
+        USLOSS_Console("zap(): Checking if process tried to zap itself.\n");
+	
+	if (DEBUG && debugflag)
+		USLOSS_Console("zap(): zap->pid = %d\n",zap->pid);
+	
+	if (zap == NULL) {
+        USLOSS_Console("zap(): process being zapped does not exist.  Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (Current->pid == zap->pid) {
         USLOSS_Console("zap(): process %d tried to zap itself.  ", pid);
         USLOSS_Console("Halting...\n");
+        USLOSS_Halt(1);
+        
     }
 
     if (DEBUG && debugflag)
         USLOSS_Console("zap(): Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[index].pid == -1) {
-        USLOSS_Console("Tried to zap a nonexistent process\n");
-        USLOSS_Halt(1);
-    }
+    
 
-    if (ProcTable[index].status == JOIN) {
-        ProcTable[index].wasJoinZapped = 1;
+    if (zap->status == JOIN) {
+        zap->wasJoinZapped = 1;
     }
 
     if (DEBUG && debugflag)
@@ -1012,29 +1036,39 @@ int zap(int pid) {
 
     ProcTable[index].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
-
+	
+	//move blockedToReadyList()
+	readyListToBlocked(Current->pid);
+	printList(Blocked, "zap", "Blocked");
+    
     // add ProcTable[pid] to end of Current->zappingList
-    procPtr ref = Current->zappingList;
-    if (ref == NULL) { // no current processes zapped
-        Current->zappingList = &ProcTable[pid];
+    //procStruct ref = ProcTable[index];
+    procPtr walk = zap->zappingList;
+    if (DEBUG && debugflag)
+        USLOSS_Console("zap(): zap this: %s \n", zap->name);
+    if (walk == NULL) { // no current processes zapped
+        walk = Current;
     }
     else {
-        while (ref->nextZapping != NULL) { // walk down zapping list to the end
-            ref = ref->nextZapping;
+        while (walk->nextZapping != NULL) { // walk down zapping list to the end
+            walk = walk->nextZapping;
         }
         // add ProcTable[pid] to end of list
-        ref->nextZapping = &ProcTable[pid];
-        ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
+        walk->nextZapping = Current;
+        //ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
+	printZapping(/*ProcTable[index].zappingList*/zap->zappingList, "zap");
 
     // Current process was zapped while in zap
     if (isZapped()) {
         return -1;
     }
 
+	enableInterrupts();
+	
     dispatcher();
 
-    enableInterrupts();
+    
     return 0;
 }
 
@@ -1052,10 +1086,17 @@ int blockMe(int newStatus) {
         USLOSS_Halt(1);
     }
     
-    if (isZapped()) return -1;
+    
 
     Current->status = newStatus;
-
+	readyListToBlocked(Current->pid);
+	
+	
+	
+	enableInterrupts();
+	
+	dispatcher();
+	if (isZapped()) return -1;
     return 0;
 }
 
@@ -1203,8 +1244,8 @@ int readyListToBlocked(int PID){
 int moveToEndOfReadyListPriority(int PID){
 	int result = 0;
 	//no change needed
-	if( ReadyList->pid == 6) return 1;
-	if( ReadyList->pid == PID && ReadyList->nextProcPtr->pid == 6) return 1; 
+	//if( ReadyList->pid == 6) return 1;
+	//if( ReadyList->pid == PID && ReadyList->nextProcPtr->pid == 6) return 1; 
 	
 	//remove from ReadyList
 	procPtr walk = NULL;
@@ -1274,7 +1315,7 @@ void printChildren(procPtr childProcPtr, char *funcName){
 }
 
 void printUnjoinedChildren(procPtr unjoined, char *funcName){
-if (DEBUG && debugflag){
+	if (DEBUG && debugflag){
     	procPtr walk = unjoined;
     	USLOSS_Console("%s(): unjoined: ", funcName);
     	while(walk != NULL){
@@ -1329,33 +1370,66 @@ int unblockProc(int pid) {
 
     // past all error cases, set status to READY and add to ReadyList
     ProcTable[index].status = READY;
+	blockedToReadyList(ProcTable[index].pid);
+    // if (ReadyList == NULL) {
+//         // ready list empty
+//         ReadyList = &ProcTable[index];
+//     }
+//     else if (ProcTable[index].priority < ReadyList->priority) {
+//         // add to head of ready list
+//         ProcTable[index].nextProcPtr = ReadyList;
+//         ReadyList = &ProcTable[index];
+//     }
+//     else {
+//         procPtr temp = ReadyList;
+//         while (temp->nextProcPtr != NULL) {
+//             if (ProcTable[index].priority < temp->nextProcPtr->priority) {
+//                 ProcTable[index].nextProcPtr = temp->nextProcPtr;
+//                 temp->nextProcPtr = &ProcTable[index];
+//                 break;
+//             }
+//             temp = temp->nextProcPtr;
+//         }
+//     }
 
-    if (ReadyList == NULL) {
-        // ready list empty
-        ReadyList = &ProcTable[index];
-    }
-    else if (ProcTable[index].priority < ReadyList->priority) {
-        // add to head of ready list
-        ProcTable[index].nextProcPtr = ReadyList;
-        ReadyList = &ProcTable[index];
-    }
-    else {
-        procPtr temp = ReadyList;
-        while (temp->nextProcPtr != NULL) {
-            if (ProcTable[index].priority < temp->nextProcPtr->priority) {
-                ProcTable[index].nextProcPtr = temp->nextProcPtr;
-                temp->nextProcPtr = &ProcTable[index];
-                break;
-            }
-            temp = temp->nextProcPtr;
-        }
-    }
-
+	if (isZapped()) return -1;
+	
+	enableInterrupts();
+    
     dispatcher();
 
-    if (isZapped()) return -1;
+    
 
-    enableInterrupts();
+    
     return 0;
 }
+
+void printZapping(procPtr zappingList, char *funcName){
+	if (DEBUG && debugflag){
+    	procPtr walk = zappingList;
+    	USLOSS_Console("%s(): zappingList: ", funcName);
+    	while(walk != NULL){
+    		USLOSS_Console("%s %d  ", walk->name,walk->status);
+    		walk = walk->nextZapping;
+    	}
+    	USLOSS_Console("\n");
+    }
+
+}
+procPtr getProcPtr(int PID){
+	procPtr result = NULL;
+	
+	procPtr walk = ReadyList;
+	while(walk != NULL){
+		if (walk->pid == PID) return walk;
+		walk = walk->nextProcPtr;
+	}
+	walk = Blocked;
+	while(walk != NULL){
+		if (walk->pid == PID) return walk;
+		walk = walk->nextProcPtr;
+	}
+	return result;
+}
+
 
