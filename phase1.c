@@ -33,6 +33,7 @@ int getpid();
 int zap(int pid);
 int isZapped();
 int blockMe(int newStatus);
+int unblockProc(int pid);
 
 int blockedToReadyList(int pid);
 int readyListToBlocked(int pid);
@@ -40,6 +41,7 @@ int moveToEndOfReadyListPriority(int pid);
 void printList(procPtr Head, char*, char*);
 void printChildren(procPtr Head, char*);
 void printUnjoinedChildren(procPtr Head, char*);
+
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -777,7 +779,12 @@ void dispatcher(void)
     	return;
     }
     else {
+<<<<<<< HEAD
     	
+=======
+    	//stash Current time used to  TT
+    	Current->totalTime += timeSlice;
+>>>>>>> master
     	
     	//move Current to end of priority
     	if(ReadyList->nextProcPtr && Current->priority == ReadyList->nextProcPtr->priority)
@@ -979,24 +986,33 @@ int getpid() {
 int zap(int pid) {
     checkKernelMode("zap");
     disableInterrupts();
+    
+    int index = pid % MAXPROC;
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if process tried to zap itself\n");
+        USLOSS_Console("zap(): Checking if process tried to zap itself\n");
 
-    if (Current == &ProcTable[pid]) {
-        USLOSS_Console("Process tried to zap itself\n");
-        USLOSS_Halt(1);
+    if (Current == &ProcTable[index]) {
+        USLOSS_Console("zap(): process %d tried to zap itself.  ", pid);
+        USLOSS_Console("Halting...\n");
     }
 
     if (DEBUG && debugflag)
-        USLOSS_Console("Checking if trying to zap a nonexistent process\n");
+        USLOSS_Console("zap(): Checking if trying to zap a nonexistent process\n");
 
-    if (ProcTable[pid].pid == -1) {
+    if (ProcTable[index].pid == -1) {
         USLOSS_Console("Tried to zap a nonexistent process\n");
         USLOSS_Halt(1);
     }
 
-    ProcTable[pid].zapStatus = 1; // mark process as zapped
+    if (ProcTable[index].status == JOIN) {
+        ProcTable[index].wasJoinZapped = 1;
+    }
+
+    if (DEBUG && debugflag)
+        USLOSS_Console("zap(): Setting statuses\n");
+
+    ProcTable[index].zapStatus = 1; // mark process as zapped
     Current->status = ZAPBLOCK;
 
     // add ProcTable[pid] to end of Current->zappingList
@@ -1013,7 +1029,7 @@ int zap(int pid) {
         ref->nextZapping->nextZapping = NULL; // end list to avoid circular refs
     }
 
-    // Current process was zapped wile in zap
+    // Current process was zapped while in zap
     if (isZapped()) {
         return -1;
     }
@@ -1086,6 +1102,7 @@ int readtime(){
 	}
 	
 	return (currentTime - Current->startTime) + Current->totalTime;
+
 }//end readtime
 
 // This operation returns the time (in microseconds) at which the currently
@@ -1270,4 +1287,77 @@ if (DEBUG && debugflag){
     }
 }
 
+
+/*
+ * unblocks process pid, changes its status to READY,
+ * adds it to the ReadyList, then calls the dispatcher
+ * returns:
+ *   -2 if pid was not blocked, does not exist, is Current, or
+ *      is blocked on a status <= 10
+ *   -1 if the calling process was zapped
+ *    0 otherwise
+ */
+int unblockProc(int pid) {
+    checkKernelMode("unblockProc");
+    disableInterrupts();
+
+    int index = pid % MAXPROC;
+    if (ProcTable[index].pid == -1) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock a nonexistent proc\n");
+        return -2;
+    }
+
+    if (&ProcTable[index] == Current) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock Current\n");
+
+        return -2;
+    }
+
+    if (ProcTable[index].status == READY) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock a ready proci\n");
+
+        return -2;
+    }
+
+    if (ProcTable[index].status <= 10) {
+        if (DEBUG && debugflag)
+            USLOSS_Console("unblockProc(): tried to unblock proc with status <= 10\n");
+
+        return -2;
+    }
+
+    // past all error cases, set status to READY and add to ReadyList
+    ProcTable[index].status = READY;
+
+    if (ReadyList == NULL) {
+        // ready list empty
+        ReadyList = &ProcTable[index];
+    }
+    else if (ProcTable[index].priority < ReadyList->priority) {
+        // add to head of ready list
+        ProcTable[index].nextProcPtr = ReadyList;
+        ReadyList = &ProcTable[index];
+    }
+    else {
+        procPtr temp = ReadyList;
+        while (temp->nextProcPtr != NULL) {
+            if (ProcTable[index].priority < temp->nextProcPtr->priority) {
+                ProcTable[index].nextProcPtr = temp->nextProcPtr;
+                temp->nextProcPtr = &ProcTable[index];
+                break;
+            }
+            temp = temp->nextProcPtr;
+        }
+    }
+
+    dispatcher();
+
+    if (isZapped()) return -1;
+
+    enableInterrupts();
+    return 0;
+}
 
