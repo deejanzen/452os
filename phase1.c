@@ -779,12 +779,10 @@ void dispatcher(void)
     	return;
     }
     else {
-<<<<<<< HEAD
-    	
-=======
+
     	//stash Current time used to  TT
     	Current->totalTime += timeSlice;
->>>>>>> master
+
     	
     	//move Current to end of priority
     	if(ReadyList->nextProcPtr && Current->priority == ReadyList->nextProcPtr->priority)
